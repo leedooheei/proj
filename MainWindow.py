@@ -6,242 +6,282 @@ import time
 import mysql.connector
 import pyttsx3
 import speech_recognition as sr
-from PyQt5.QtCore import QSize, Qt, QCoreApplication, QMetaObject, QRect, QTimer
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QDialog, \
-    QMessageBox, QSizePolicy
-from PyQt5.QtWidgets import QVBoxLayout, QWidget
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
 
-from PyQt5.QtWidgets import QMainWindow, QPushButton
 from Normal import NormalWindow, get_menu_data_from_database  # Normal.py 파일에서 NormalWindow 클래스 import
-
-from Recommend import MenuWidget
-
-
-# MainWindow.py 파일
-
+# from Recommend import MenuWidget
 
 class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        print("MainWindow initialized")
-        self.initUI()
-
-    def initUI(self):
-        print("Initializing UI")
-        self.MainWindow = Ui_MainWindow()
-        self.MainWindow.setupUi(self)
-        print("UI initialized")
-        self.show()
-class Ui_MainWindow(object):
     def go_manager(self):
         from adminwindow.Admin_Main import AdminMainWindow
-        self.manager_window = AdminMainWindow()
+        self.manager_window = AdminMainWindow(username=self.username)
         self.manager_window.show()
 
-
-    def go_active(self):
-        self.active_window = QMainWindow()
-        self.active_ui = Ui_OrderMethod()
-        self.active_ui.setupUi(self.active_window)
-        self.active_window.show()
-
-
-
-    def setupUi(self, MainWindow):
-        if not MainWindow.objectName():
-            MainWindow.setObjectName(u"MainWindow")
-        MainWindow.setEnabled(True)
-        MainWindow.resize(480, 800)
-        sizePolicy = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+    def __init__(self, username=None):
+        from LoginWindow import LoginWindow
+        super(MainWindow, self).__init__()
+        self.setStyleSheet(u"Background-color:rgb(255, 255, 255);")
+        self.setFixedSize(480, 800)
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.login_window = LoginWindow()  # LoginWindow 인스턴스 생성
+        self.username = username
+        self.MainDisplay = QWidget()
+        self.MainDisplay.setObjectName(u"MainDisplay")
+        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(MainWindow.sizePolicy().hasHeightForWidth())
-        MainWindow.setSizePolicy(sizePolicy)
-        MainWindow.setMinimumSize(QSize(480, 800))
-        MainWindow.setMaximumSize(QSize(480, 800))
-        self.centralwidget = QWidget(MainWindow)
-        self.centralwidget.setObjectName(u"centralwidget")
+        sizePolicy.setHeightForWidth(self.MainDisplay.sizePolicy().hasHeightForWidth())
+        self.MainDisplay.setSizePolicy(sizePolicy)
+        self.MainDisplay.setFixedSize(480, 800)
+        self.MainStackWidget = QStackedWidget(self.MainDisplay)
+        self.MainStackWidget.setObjectName(u"MainStackWidget")
+        self.MainStackWidget.setGeometry(QRect(0, 0, 480, 800))
+        self.EatWhere = ""
 
-        self.takeoutbutton = QPushButton(self.centralwidget)
-        self.takeoutbutton.setObjectName(u"takeoutbutton")
-        self.takeoutbutton.setGeometry(QRect(10, 290, 220, 440))
-        self.takeoutbutton.clicked.connect(self.go_active)
+        # 전체 큰 화면 위젯(메인)
+        self.PagePlaceNMethod = QWidget()
+        self.PagePlaceNMethod.setObjectName(u"PagePlaceNMethod")
+        self.verticalLayoutWidget = QWidget(self.PagePlaceNMethod)
+        self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
+        self.verticalLayoutWidget.setGeometry(QRect(0, 0, 480, 800))
+        self.LayoutPlaceNMethod = QVBoxLayout(self.verticalLayoutWidget)
+        self.LayoutPlaceNMethod.setObjectName(u"LayoutPlaceNMethod")
+        self.LayoutPlaceNMethod.setContentsMargins(0, 0, 0, 0)
+        self.LayoutWelcomeNSize = QHBoxLayout()
+        self.LayoutWelcomeNSize.setObjectName(u"LayoutWelcomeNSize")
+        self.LayoutSetting = QVBoxLayout()
+        self.LayoutSetting.setObjectName(u"LayoutSetting")
 
-        self.Welcomelabel = QLabel(self.centralwidget)
-        self.Welcomelabel.setObjectName(u"Welcomelabel")
-        self.Welcomelabel.setGeometry(QRect(110, 40, 221, 131))
+        # 세팅버튼 및 홈버튼 정의
+        self.SettingButton = QPushButton(self.verticalLayoutWidget)
+        icon = QIcon()
+        icon.addFile(u":/AdminSetup/settings.png", QSize(), QIcon.Normal, QIcon.On)
+        self.SettingButton.setIcon(icon)
+        self.SettingButton.setIconSize(QSize(20, 20))
+        self.SettingButton.setFixedSize(30, 30)
+        self.SettingButton.setFlat(1)
+
+        self.ButtonHome = QPushButton(self.verticalLayoutWidget)
+        iconBack = QIcon()
+        iconBack.addFile(u":img/AdminSetup/left.png", QSize(), QIcon.Normal, QIcon.On)
+        self.ButtonHome.setIcon(iconBack)
+        self.ButtonHome.setFixedSize(50, 30)
+
+        # 관리자 설정 진입하는 버튼 배치
+        self.LayoutSetting.addWidget(self.SettingButton)
+        self.LayoutSetting.addWidget(self.ButtonHome)
+
+        # 세팅버튼 클릭시 관리자 페이지 호출
+        self.SettingButton.clicked.connect(self.go_manager)
+        # 홈버튼 클릭시 홈화면으로 복귀
+        self.ButtonHome.clicked.connect(self.go_home)
+
+        self.LabelWelcome = QLabel(self.verticalLayoutWidget)
+        self.LabelWelcome.setObjectName(u"LabelWelcome")
         font = QFont()
-        font.setFamily(u"Arial Black")
-        font.setPointSize(17)
-        font.setBold(True)
-        font.setWeight(75)
-        font.setKerning(True)
-        self.Welcomelabel.setFont(font)
-        self.Welcomelabel.setAlignment(Qt.AlignCenter)
-        self.zoominbutton = QPushButton(self.centralwidget)
-        self.zoominbutton.setObjectName(u"zoominbutton")
-        self.zoominbutton.setGeometry(QRect(330, 50, 61, 61))
-        font1 = QFont()
-        font1.setFamily(u"Arial")
-        font1.setPointSize(40)
-        self.zoominbutton.setFont(font1)
-        self.zoominbutton_2 = QPushButton(self.centralwidget)
-        self.zoominbutton_2.setObjectName(u"zoominbutton_2")
-        self.zoominbutton_2.setGeometry(QRect(410, 50, 61, 61))
-        sizePolicy1 = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.zoominbutton_2.sizePolicy().hasHeightForWidth())
-        self.zoominbutton_2.setSizePolicy(sizePolicy1)
-        font2 = QFont()
-        font2.setFamily(u"Arial")
-        font2.setPointSize(44)
-        self.zoominbutton_2.setFont(font2)
-        self.label = QLabel(self.centralwidget)
-        self.label.setObjectName(u"label")
-        self.label.setGeometry(QRect(350, 10, 101, 31))
-        font3 = QFont()
-        font3.setFamily(u"Arial")
-        font3.setPointSize(15)
-        font3.setBold(True)
-        font3.setWeight(75)
-        self.label.setFont(font3)
-        self.label.setAlignment(Qt.AlignCenter)
-        self.toolButton = QPushButton(self.centralwidget)
-        self.toolButton.setObjectName(u"toolButton")
-        self.toolButton.setGeometry(QRect(10, 10, 51, 51))
-        self.Welcomelabel_2 = QLabel(self.centralwidget)
-        self.Welcomelabel_2.setObjectName(u"Welcomelabel_2")
-        self.Welcomelabel_2.setGeometry(QRect(40, 220, 411, 51))
-        self.Welcomelabel_2.setFont(font)
-        self.Welcomelabel_2.setAlignment(Qt.AlignCenter)
-        self.eatherebutton = QPushButton(self.centralwidget)
-        self.eatherebutton.setObjectName(u"eatherebutton")
-        self.eatherebutton.setGeometry(QRect(250, 290, 220, 440))
-        self.eatherebutton.clicked.connect(self.go_active)
+        font.setFamily(u"학교안심 우주 R")
+        font.setPointSize(25)
+        self.LabelWelcome.setFont(font)
+        self.LabelWelcome.setAlignment(Qt.AlignCenter)
+        self.LabelWelcome.setMaximumSize(320, 100)
+        self.LabelWelcome.setText("쉽고 간편하게\n주문하세요")
 
-        MainWindow.setCentralWidget(self.centralwidget)
+        self.VlayoutTextsize = QVBoxLayout()
+        self.LabelTextsize = QLabel(self.verticalLayoutWidget)
+        self.LabelTextsize.setFont(font)
+        self.LabelTextsize.setAlignment(Qt.AlignCenter)
+        self.LabelTextsize.setText("글씨 크기")
 
-        self.toolButton.clicked.connect(self.go_manager)
+        self.VlayoutTextsize.addWidget(self.LabelTextsize)
 
-        self.retranslateUi(MainWindow)
-        QMetaObject.connectSlotsByName(MainWindow)
+        self.LayoutSizebutton = QHBoxLayout()
+        self.LayoutSizebutton.setObjectName(u"LayoutSizebutton")
+        self.ButtonBig = QPushButton(self.verticalLayoutWidget)
+        self.ButtonBig.setObjectName(u"ButtonBig")
+        self.ButtonBig.setFixedSize(62, 62)
+        sizemodifyfont = QFont()
+        sizemodifyfont.setFamily(u"Noto Sans CJK KR Bold")
+        sizemodifyfont.setPointSize(40)
+        self.ButtonBig.setFont(sizemodifyfont)
+        self.ButtonBig.setStyleSheet(u"border-radius:15px;\n"
+                                     "border: 2px solid rgb(45, 45, 45);\n""color: rgb(255,127,0)")
+
+        self.LayoutSizebutton.addWidget(self.ButtonBig)
+
+        self.ButtonSmall = QPushButton(self.verticalLayoutWidget)
+        self.ButtonSmall.setObjectName(u"ButtonSmall")
+        self.ButtonSmall.setFont(sizemodifyfont)
+        self.ButtonSmall.setStyleSheet(u"border-radius:15px;\n"
+                                       "border: 2px solid rgb(45, 45, 45);\n""color: rgb(255,127,0)")
+        self.ButtonSmall.setFixedSize(62, 62)
+        self.ButtonBig.setText("+")
+        self.ButtonSmall.setText("−")
+        # 레이아웃 중첩배치 및 레이아웃 사이 공간 추가
+        self.LayoutSizebutton.addWidget(self.ButtonSmall)
+        self.VlayoutTextsize.addLayout(self.LayoutSizebutton)
+        self.LayoutWelcomeNSize.addLayout(self.LayoutSetting)
+        self.LayoutWelcomeNSize.addStretch(1)
+        self.LayoutWelcomeNSize.addWidget(self.LabelWelcome)
+        self.LayoutWelcomeNSize.addStretch(1)
+        self.LayoutWelcomeNSize.addLayout(self.VlayoutTextsize)
+
+        self.LayoutPlaceNMethod.addLayout(self.LayoutWelcomeNSize)
+
+        self.SWidgetPlaceNMethod = QStackedWidget(self.verticalLayoutWidget)
+        self.SWidgetPlaceNMethod.setObjectName(u"SWidgetPlaceNMethod")
+        self.PageSelectWhere = QWidget()
+        self.PageSelectWhere.setObjectName(u"PageSelectWhere")
+        self.verticalLayoutWidget_2 = QWidget(self.PageSelectWhere)
+        self.verticalLayoutWidget_2.setObjectName(u"verticalLayoutWidget_2")
+        self.verticalLayoutWidget_2.setGeometry(QRect(0, 0, 480, 690))
+        self.VLayoutSelectWhere = QVBoxLayout(self.verticalLayoutWidget_2)
+        self.VLayoutSelectWhere.setObjectName(u"VLayoutSelectWhere")
+        self.VLayoutSelectWhere.setContentsMargins(0, 0, 0, 0)
+        self.LabelSelectWhere = QLabel(self.verticalLayoutWidget_2)
+        self.LabelSelectWhere.setObjectName(u"LabelSelectWhere")
+        self.LabelSelectWhere.setFont(font)
+        self.LabelSelectWhere.setMaximumSize(480, 40)
+        self.LabelSelectWhere.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        self.LabelSelectWhere.setText("식사 장소를 선택하세요")
+        self.VLayoutSelectWhere.addWidget(self.LabelSelectWhere)
+
+        self.LayoutWhereButton = QHBoxLayout()
+        self.LayoutWhereButton.setObjectName(u"LayoutWhereButton")
+
+        def BtnWhere(filename, text):
+            btn = QPushButton()
+            btn.setStyleSheet(f"QPushButton {{ background-image: url('img/Here&ToGo/{filename}');"
+                              f"background-position: center; background-repeat: no-repeat; background-size: contain; }}")
+            btn.setMaximumSize(220, 600)
+            btn.setFlat(True)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            btn.setText(text)
+            btn.clicked.connect(self.go_method)
+            return btn
+
+        self.BtnHere = BtnWhere("Eat_Here.png", "먹고가기")  # 먹고가기 버튼 디자인 정의
+        self.BtnTake = BtnWhere("Take_Out.png", "포장하기")  # 테이크아웃 버튼 디자인 정의
+
+        # 버튼을 배치
+        self.LayoutWhereButton.addWidget(self.BtnHere)
+        self.LayoutWhereButton.addWidget(self.BtnTake)
+
+        self.VLayoutSelectWhere.addLayout(self.LayoutWhereButton)
+
+        self.SWidgetPlaceNMethod.addWidget(self.PageSelectWhere)
+        self.PageOrdermethod = QWidget()
+        self.gridLayoutWidget = QWidget(self.PageOrdermethod)
+        self.gridLayoutWidget.setObjectName(u"gridLayoutWidget")
+        self.gridLayoutWidget.setGeometry(QRect(0, 0, 480, 690))
+        self.LayoutOrdermethod = QGridLayout(self.gridLayoutWidget)
+        self.LayoutOrdermethod.setObjectName(u"LayoutOrdermethod")
+        self.LayoutOrdermethod.setContentsMargins(0, 0, 0, 0)
+
+        def makeOrderBtn(text, wid, hei):
+            # 버튼 생성을 함수로 정의(생성될 레이아웃,가로,세로 크기)
+            btn = QPushButton()
+            btn.setFont(font)
+            btn.setStyleSheet(u"border-radius:15px; border: 2px solid rgb(45, 45, 45);")
+            btn.setText(text)
+            btn.setFixedSize(wid, hei)
+            return btn
+
+        self.BtnChoboOdr = makeOrderBtn("쉬운 주문하기", 470, 180)  # 초보용 주문 버튼 설정
+        self.BtnRecOdr = makeOrderBtn("메뉴 추천", 470, 180)  # 메뉴 추천 버튼 설정
+        self.BtnVoiceOdr = makeOrderBtn("음성 주문", 470, 180)  # 음성 주문 버튼 설정
+
+        # 주문 버튼 배치
+        self.LayoutOrdermethod.addWidget(self.BtnChoboOdr, 1, 0)
+        self.LayoutOrdermethod.addWidget(self.BtnVoiceOdr, 2, 0)
+        self.LayoutOrdermethod.addWidget(self.BtnRecOdr, 3, 0)
+
+        # 각 주문별 버튼입력 시 페이지 전환
+        self.BtnChoboOdr.clicked.connect(self.go_normal_order)
+        self.BtnVoiceOdr.clicked.connect(self.go_voice)
+        self.BtnRecOdr.clicked.connect(self.go_recommend)
+
+        self.LabelMethodSelect = QLabel(self.gridLayoutWidget)
+        self.LabelMethodSelect.setObjectName(u"LabelMethodSelect")
+        self.LabelMethodSelect.setFont(font)
+        self.LabelMethodSelect.setAlignment(Qt.AlignCenter)
+        self.LabelMethodSelect.setText("주문 방법을 선택하세요")
+
+        self.LayoutOrdermethod.addWidget(self.LabelMethodSelect, 0, 0)
+        self.SWidgetPlaceNMethod.addWidget(self.PageOrdermethod)
+        self.LayoutPlaceNMethod.addWidget(self.SWidgetPlaceNMethod)
 
 
-        self.zoominbutton.clicked.connect(self.increase_font_size)
-        self.zoominbutton_2.clicked.connect(self.decrease_font_size)
+        self.MainStackWidget.addWidget(self.PagePlaceNMethod)
 
-        self.font_size = 15
 
+
+        self.setCentralWidget(self.MainDisplay)
+
+        self.SWidgetPlaceNMethod.setCurrentIndex(0)
+        # 버튼에 기능 연결
+        self.ButtonBig.clicked.connect(self.increase_font_size)
+        self.ButtonSmall.clicked.connect(self.decrease_font_size)
+
+        # 글꼴 크기 초기값 설정
+        self.font_size = 25
+
+
+
+    # 글씨 크기 늘리는 함수
     def increase_font_size(self):
-        self.font_size += 2
+        self.font_size += 1
         self.update_font()
 
+    # 글씨 크기 줄이는 함수
     def decrease_font_size(self):
-        self.font_size -= 2
+        self.font_size -= 1
         self.update_font()
 
+    # 변경된 글씨 크기를 업데이트 시켜주는 함수
     def update_font(self):
         font = QFont()
-        font.setFamily("Arial")
+        font.setFamily("학교안심 우주 R")
         font.setPointSize(self.font_size)
-        self.label.setFont(font)
-        self.Welcomelabel.setFont(font)
-        self.Welcomelabel_2.setFont(font)
-        self.zoominbutton.setFont(font)
-        self.zoominbutton_2.setFont(font)
+        self.LabelWelcome.setFont(font)
+        self.LabelSelectWhere.setFont(font)
+        self.LabelMethodSelect.setFont(font)
+        self.BtnVoiceOdr.setFont(font)
+        self.BtnRecOdr.setFont(font)
+        self.BtnChoboOdr.setFont(font)
 
-    def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"키오스크", None))
-        self.takeoutbutton.setText(QCoreApplication.translate("MainWindow", u"포장 주문", None))
-        self.Welcomelabel.setText(QCoreApplication.translate("MainWindow", u"초보도\n"
-"쉽고 간편하게\n"
-"주문하세요", None))
-        self.zoominbutton.setText(QCoreApplication.translate("MainWindow", u"+", None))
-        self.zoominbutton_2.setText(QCoreApplication.translate("MainWindow", u"-", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"글씨 크기", None))
-        self.toolButton.setText("")
-        self.Welcomelabel_2.setText(QCoreApplication.translate("MainWindow", u"메뉴에서 선택 / 포장 주문 선택", None))
-        self.eatherebutton.setText(QCoreApplication.translate("MainWindow", u"먹고가기", None))
+    def go_method(self):
+        # 페이지 넘기는 함수
+        self.SWidgetPlaceNMethod.setCurrentWidget(self.PageOrdermethod)
 
-
-class Ui_OrderMethod(object):
-
-
-
-    def setupUi(self, OrderMethod):
-        if not OrderMethod.objectName():
-            OrderMethod.setObjectName(u"OrderMethod")
-        OrderMethod.resize(480, 800)
-        sizePolicy = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.MinimumExpanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(OrderMethod.sizePolicy().hasHeightForWidth())
-        OrderMethod.setSizePolicy(sizePolicy)
-        OrderMethod.setMinimumSize(QSize(480, 800))
-        OrderMethod.setMaximumSize(QSize(480, 800))
-        self.centralwidget = QWidget(OrderMethod)
-        self.centralwidget.setObjectName(u"centralwidget")
-        self.chobo = QPushButton(self.centralwidget)
-        self.chobo.setObjectName(u"chobo")
-        self.chobo.setGeometry(QRect(10, 150, 230, 400))
-        self.voice = QPushButton(self.centralwidget)
-        self.voice.setObjectName(u"voice")
-        self.voice.setGeometry(QRect(240, 150, 230, 400))
-        self.recommend = QPushButton(self.centralwidget)
-        self.recommend.setObjectName(u"recommend")
-        self.recommend.setGeometry(QRect(10, 560, 461, 230))
-        self.info = QLabel(self.centralwidget)
-        self.info.setObjectName(u"info")
-        self.info.setGeometry(QRect(30, 50, 411, 51))
-        font = QFont()
-        font.setFamily(u"Arial")
-        font.setPointSize(35)
-        font.setBold(True)
-        font.setWeight(75)
-        self.info.setFont(font)
-        self.info.setAlignment(Qt.AlignCenter)
-        OrderMethod.setCentralWidget(self.centralwidget)
-
-        self.retranslateUi(OrderMethod)
-
-        QMetaObject.connectSlotsByName(OrderMethod)
-        self.chobo.clicked.connect(self.go_normal)
-        self.voice.clicked.connect(self.go_voice)
-        self.recommend.clicked.connect(self.go_recommend)
-
-    def go_normal(self):
-        self.go_normal_order()
+    def go_home(self):
+        # 홈으로 보내는 함수
+        self.MainStackWidget.setCurrentIndex(0)
+        self.SWidgetPlaceNMethod.setCurrentIndex(0)
+        self.EatWhere = ""
 
     def go_normal_order(self):
-
+        self.close()
         menu_data = get_menu_data_from_database()
         self.normal_window = NormalWindow(menu_data)
         self.normal_window.show()
 
     def go_voice(self):
-
+        self.close()
         self.voice_window = VoiceKiosk()
         self.voice_window.show()
 
     def go_recommend(self):
+        self.close()
         pass
 
-    def retranslateUi(self, OrderMethod):
-        OrderMethod.setWindowTitle(QCoreApplication.translate("OrderMethod", u"주문 방법 선택", None))
-        self.chobo.setText(QCoreApplication.translate("OrderMethod", u"일반 주문", None))
-        self.voice.setText(QCoreApplication.translate("OrderMethod", u"음성 주문", None))
-        self.recommend.setText(QCoreApplication.translate("OrderMethod", u"메뉴 추천", None))
-        self.info.setText(QCoreApplication.translate("OrderMethod", u"주문 방법 선택", None))
 
 class VoiceKiosk(QMainWindow):
-
-    def show_order_method_dialog(self):
-        self.dialog = QDialog(self)
-        order_method_ui = Ui_OrderMethod()
-        order_method_ui.setupUi(self.dialog)
-        self.dialog.exec_()
+    def backtoMain(self):
+        self.close()
+        self.mainwindow = MainWindow()
+        self.mainwindow.show()
 
     def activate_microphone(self):
         if not self.listening:
@@ -333,11 +373,7 @@ class VoiceKiosk(QMainWindow):
         self.db_connection = None
 
         self.connect_to_database()
-        self.back_button.clicked.connect(self.show_order_method_dialog)
-
-    def show_order_method_dialog(self):
-        self.order_method_dialog = Ui_OrderMethod()
-        self.order_method_dialog.exec_()
+        self.back_button.clicked.connect(self.backtoMain)
 
     def check_menu(self, user_input):
         if self.db_connection is None:
@@ -414,7 +450,6 @@ class VoiceKiosk(QMainWindow):
 
 
 if __name__ == '__main__':
-
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

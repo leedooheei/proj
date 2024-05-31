@@ -136,8 +136,8 @@ class LoginWindow(QMainWindow):
                 self.open_kiosk_window()
 
     def open_admin_window(self):
-        from adminwindow.Admin_Main import AdminMainWindow
-        admin_window = AdminMainWindow(username=self.username_edit.text())
+        from adminwindow.Admin_Display import AdminDisplay
+        admin_window = AdminDisplay(username=self.username_edit.text())
         admin_window.show()
         self.close()
 

@@ -4,8 +4,12 @@ import pyttsx3
 import sys
 
 import requests
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QHBoxLayout, QGridLayout, QTabWidget
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QHBoxLayout, \
+    QGridLayout, QTabWidget, QMessageBox
+
+
 class VoiceThread(QThread):
     speak_completed = pyqtSignal()
     def __init__(self, parent=None):
@@ -41,13 +45,24 @@ class OrderNumberManager:
         self.current_order_number = 1
 
 class NormalWindow(QMainWindow):
-    def __init__(self, menu_data):
+    def __init__(self, menu_data, EatWhere=None):
         super(NormalWindow, self).__init__()
         self.menu_data = menu_data
+        self.cart = self.process_menu_data()  # 메뉴 데이터를 처리하여 장바구니에 저장
+
         self.voice_thread = VoiceThread()
         self.voice_thread.start()
         self.initUI()
+        self.EatWhere = EatWhere  # EatWhere 추가
 
+
+
+    def process_menu_data(self):
+        # menu_data를 처리하여 장바구니 리스트를 반환
+        cart_items = []
+        for menu in self.menu_data:
+            cart_items.append(menu)
+        return cart_items
 
     def initUI(self):
         self.setWindowTitle("키오스크")
@@ -55,6 +70,7 @@ class NormalWindow(QMainWindow):
         self.cart = []  # 장바구니 정보를 저장할 리스트
 
         main_layout = QVBoxLayout()
+
         self.central_widget = QWidget()
         self.central_widget.setLayout(main_layout)
         self.setCentralWidget(self.central_widget)
@@ -116,7 +132,7 @@ class NormalWindow(QMainWindow):
             self.play_order_no()
         else:
             try:
-                self.payment_screen = PaymentScreen(self.cart)
+                self.payment_screen = PaymentScreen(self.cart, self.EatWhere)
                 self.payment_screen.payment_completed.connect(self.handle_payment_completed)
                 self.hide()
                 self.payment_screen.show()
@@ -208,12 +224,17 @@ class NormalWindow(QMainWindow):
         self.update_total_price()  # 총 가격 업데이트
 
     def handle_payment_completed(self, total_price):
-        order_number = "1234"  # 주문번호는 임의의 값으로 설정
-        menu_names = ", ".join(item['name'] for item in self.cart)
-        payment_time = "12:00"  # 결제 시간은 임의의 값으로 설정
+        order_number_manager = OrderNumberManager()
+        order_number = order_number_manager.generate_order_number()
+        order_details = {
+            'order_number': order_number,
+            'cart': self.cart,
+            'total_price': total_price,
+            'EatWhere': self.EatWhere
+        }
 
         # 주문 정보를 관리자 디스플레이어로 전송
-        # self.send_order_info_to_admin(order_number, menu_names, payment_time)
+        self.send_order_info_to_admin(order_details)
 
         # 결제 완료 후 장바구니 비우기
         self.cart = []
@@ -221,27 +242,38 @@ class NormalWindow(QMainWindow):
         self.update_total_price()
         self.show_normal_window()
 
+    def send_order_info_to_admin(self, order_details):
+        try:
+            url = "http://localhost:5001/receive_order"
+            response = requests.post(url, json=order_details)
+            if response.status_code == 200:
+                print("Order sent to admin successfully")
+            else:
+                print("Failed to send order to admin")
+        except Exception as e:
+            print("Error sending order to admin:", e)
+
+
 class PaymentScreen(QWidget):
     payment_completed = pyqtSignal(float)
     counter_order_requested = pyqtSignal()
 
-    def __init__(self, cart):
-        super().__init__()
+    def __init__(self, cart, EatWhere=None, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("키오스크 결제 화면")
         self.setGeometry(100, 100, 480, 800)
         self.font_size = 16
         self.selected_payment = None
-        self.cart = cart
+        self.cart = cart  # 장바구니 정보 전달
+        self.EatWhere = EatWhere  # MainWindow에서 전달된 EatWhere 값을 사용
+        self.selected_payment_button = None  # 선택된 결제 버튼을 나타내는 변수
 
         self.initUI()
-
     def initUI(self):
-
         self.back_button = QPushButton("이전", self)
         self.back_button.setFixedSize(100, 50)
         self.back_button.setStyleSheet("font-size: 20px;")
         self.back_button.clicked.connect(self.back_button_clicked)
-
 
         self.label = QLabel("\n\n결제수단을 선택하세요\n", self)
         self.label.setAlignment(Qt.AlignCenter)
@@ -249,22 +281,22 @@ class PaymentScreen(QWidget):
             "color: orange; font-family: 'Black Han Sans', sans-serif; font-weight: 400; font-size: {}pt; text-align: center;".format(
                 self.font_size))
 
-
         self.card_payment_button = QPushButton("카드결제", self)
-        self.card_payment_button.setStyleSheet(
-            "font-size: {}pt; height: 200px; background-color: white;".format(self.font_size))
+        self.card_payment_button.setIcon(QIcon("pic/card_icon.png"))
+        self.card_payment_button.setIconSize(QSize(120, 160))
+        self.card_payment_button.setStyleSheet("font-size: {}pt; height: 200px; background-color: white;".format(self.font_size))
         self.card_payment_button.clicked.connect(self.select_card_payment)
 
 
-        self.counter_payment_button = QPushButton("카운터에서 주문", self)
-        self.counter_payment_button.setStyleSheet(
-            "font-size: {}pt; height: 200px; background-color: white;".format(self.font_size))
+        self.counter_payment_button = QPushButton("카운터에서 결제", self)
+        self.counter_payment_button.setIcon(QIcon("pic/counter_icon.png"))
+        self.counter_payment_button.setIconSize(QSize(120, 160))
+        self.counter_payment_button.setStyleSheet("font-size: {}pt; height: 200px; background-color: white;".format(self.font_size))
         self.counter_payment_button.clicked.connect(self.select_counter_payment)
 
 
         self.select_button = QPushButton("선택", self)
-        self.select_button.setStyleSheet(
-            "background-color: orange; color: white; font-size: 16pt; border-radius: 20px;")
+        self.select_button.setStyleSheet("background-color: orange; color: white; font-size: 16pt; border-radius: 20px;")
         self.select_button.clicked.connect(self.process_selection)
         self.select_button.setFixedSize(300, 50)
 
@@ -285,28 +317,69 @@ class PaymentScreen(QWidget):
 
     def back_button_clicked(self):
         self.close()
+        self.orderMain = NormalWindow()
+        self.orderMain.show()
+
 
     def select_card_payment(self):
         self.selected_payment = "카드결제"
-        print("카드 결제 선택됨:", self.selected_payment)
-        self.process_selection()
+        self.update_selected_button_style(self.card_payment_button)
 
     def select_counter_payment(self):
-        self.selected_payment = "카운터에서 주문"
-        print("카운터 결제 선택됨:", self.selected_payment)
-        self.process_selection()
+        self.selected_payment = "카운터에서 결제"
+        self.update_selected_button_style(self.counter_payment_button)
+
+    def update_selected_button_style(self, button):
+        # 이전에 선택된 버튼이 있으면 해당 버튼의 스타일을 초기화
+        if self.selected_payment_button:
+            self.selected_payment_button.setStyleSheet(
+                "font-size: {}pt; height: 200px; background-color: white;".format(self.font_size))
+
+        # 선택된 버튼에 새로운 스타일 적용
+        button.setStyleSheet("font-size: {}pt; height: 200px; background-color: orange;".format(self.font_size))
+        self.selected_payment_button = button
 
     def process_selection(self):
-        if self.selected_payment:
-            print("선택한 결제 방법:", self.selected_payment)
-            if self.selected_payment == "카드결제":
-                total_price = sum(item['price'] * item.get('quantity', 1) for item in self.cart)
-                self.payment_completed.emit(total_price)
-            elif self.selected_payment == "카운터에서 주문":
-                self.counter_order_requested.emit()
+        from adminwindow.Admin_Display import AdminDisplay
+        if self.selected_payment is None:
+            QMessageBox.warning(self, "경고", "결제 방식을 선택해주세요.")
         else:
-            print("결제 방법을 먼저 선택하세요.")
+            if self.selected_payment == "카드결제":
+                print("카드결제 화면으로 이동합니다.")
+                print(self.EatWhere)
+                order_number_manager = OrderNumberManager()
+                order_number = order_number_manager.generate_order_number()
+                order_details = {
+                    'order_number': order_number,
+                    'cart': self.cart,
+                    'total_price': sum(item['price'] * item.get('quantity', 1) for item in self.cart),
+                    'EatWhere': self.EatWhere
+                }
 
+                # Open AdminDisplay window with order details
+                self.admin_display = AdminDisplay(orders=[order_details])
+                self.admin_display.show()
+                self.hide()
+
+            elif self.selected_payment == "카운터에서 결제":
+                print("장바구니에 담긴 상품들:", self.cart)
+                print(self.EatWhere)
+                order_number_manager = OrderNumberManager()
+                order_number = order_number_manager.generate_order_number()
+                order_details = {
+                    'order_number': order_number,
+                    'cart': self.cart,
+                    'total_price': sum(item['price'] * item.get('quantity', 1) for item in self.cart),
+                    'EatWhere': self.EatWhere
+                }
+
+                # Open AdminDisplay window with order details
+                self.admin_display = AdminDisplay(orders=[order_details])
+                self.admin_display.show()
+                self.hide()
+
+    def show_admin_window(self):
+      pass
 
 def get_menu_data_from_database():
     menu_data = {}
@@ -318,11 +391,9 @@ def get_menu_data_from_database():
             database="kiosk"
         )
         if db:
-            print("데이터베이스 연결 성공!")
             cursor = db.cursor(dictionary=True)
             cursor.execute("SELECT name, price, category FROM menu")
             rows = cursor.fetchall()
-            print("데이터를 가져왔습니다:")
             for row in rows:
                 print(row)
                 name = row["name"]
@@ -334,7 +405,7 @@ def get_menu_data_from_database():
             cursor.close()
             db.close()
     except mysql.connector.Error as e:
-        print(f"데이터베이스 연결 실패: {str(e)}")
+        pass
     return menu_data
 
 

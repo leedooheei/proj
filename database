@@ -1,0 +1,51 @@
+create database kiosk;
+use kiosk;
+
+CREATE INDEX username_index ON users(username);
+
+CREATE TABLE menu (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    category VARCHAR(255) NOT NULL,
+    image BLOB,
+    detail1 VARCHAR(255),
+    detail2 VARCHAR(255),
+    detail3 VARCHAR(255),
+    detail4 VARCHAR(255),
+    detail5 VARCHAR(255),
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS details (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(255) NOT NULL,
+    detail VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL
+);
+
+drop table users;
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    managerkey VARCHAR(255) DEFAULT '1234'
+);
+select * from users;
+
+INSERT INTO menu (username, name, price, category, detail1, detail2, detail3, detail4, detail5) 
+VALUES 
+('qwer1', '아메리카노', 4000, '음료', '씁쓸', '커피', '카페인', '산미', NULL),
+('qwer1', '볶음밥', 7000, '식사', '밥', '새우', '든든', NULL, NULL),
+('qwer1', '복숭아', 100, '과일', '달달', '딱딱', '무농약', NULL, NULL),
+('qwer1', '베이글', 2000, '빵', '질김', '든든', '야채', '밥대용', '탄수화물'),
+('qwer1', '블루베리스무디', 40000, '음료', '블루베리스무디', NULL, NULL, NULL, NULL),
+('qwer1', '완두콩빵', 40000, '빵', '완두콩빵', NULL, NULL, NULL, NULL);
+
+
+select * from menu where username = 'abc123';

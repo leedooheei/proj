@@ -1,3 +1,4 @@
+import json
 import socket
 import mysql.connector
 import pyttsx3
@@ -45,16 +46,16 @@ class OrderNumberManager:
         self.current_order_number = 1
 
 class NormalWindow(QMainWindow):
-    def __init__(self, menu_data, EatWhere=None):
+    def __init__(self, username, menu_data, EatWhere=None):
         super(NormalWindow, self).__init__()
+        self.username = username  # 사용자 이름을 저장
         self.menu_data = menu_data
         self.cart = self.process_menu_data()  # 메뉴 데이터를 처리하여 장바구니에 저장
 
         self.voice_thread = VoiceThread()
         self.voice_thread.start()
         self.initUI()
-        self.EatWhere = EatWhere  # EatWhere 추가
-
+        self.EatWhere = EatWhere
 
 
     def process_menu_data(self):
@@ -132,11 +133,11 @@ class NormalWindow(QMainWindow):
             self.play_order_no()
         else:
             try:
-                self.payment_screen = PaymentScreen(self.cart, self.EatWhere)
+                # 사용자 이름을 PaymentScreen 인스턴스에 전달
+                self.payment_screen = PaymentScreen(self.username, self.cart, self.EatWhere)
                 self.payment_screen.payment_completed.connect(self.handle_payment_completed)
                 self.hide()
                 self.payment_screen.show()
-
             except Exception as e:
                 print("오류 발생:", e)
                 sys.exit(1)
@@ -234,7 +235,7 @@ class NormalWindow(QMainWindow):
         }
 
         # 주문 정보를 관리자 디스플레이어로 전송
-        self.send_order_info_to_admin(order_details)
+
 
         # 결제 완료 후 장바구니 비우기
         self.cart = []
@@ -242,24 +243,14 @@ class NormalWindow(QMainWindow):
         self.update_total_price()
         self.show_normal_window()
 
-    def send_order_info_to_admin(self, order_details):
-        try:
-            url = "http://localhost:5001/receive_order"
-            response = requests.post(url, json=order_details)
-            if response.status_code == 200:
-                print("Order sent to admin successfully")
-            else:
-                print("Failed to send order to admin")
-        except Exception as e:
-            print("Error sending order to admin:", e)
-
 
 class PaymentScreen(QWidget):
     payment_completed = pyqtSignal(float)
     counter_order_requested = pyqtSignal()
 
-    def __init__(self, cart, EatWhere=None, parent=None):
+    def __init__(self, username, cart, EatWhere=None, parent=None):
         super().__init__(parent)
+        self.username = username  # 사용자 이름을 저장
         self.setWindowTitle("키오스크 결제 화면")
         self.setGeometry(100, 100, 480, 800)
         self.font_size = 16
@@ -267,8 +258,8 @@ class PaymentScreen(QWidget):
         self.cart = cart  # 장바구니 정보 전달
         self.EatWhere = EatWhere  # MainWindow에서 전달된 EatWhere 값을 사용
         self.selected_payment_button = None  # 선택된 결제 버튼을 나타내는 변수
-
         self.initUI()
+
     def initUI(self):
         self.back_button = QPushButton("이전", self)
         self.back_button.setFixedSize(100, 50)
@@ -356,6 +347,10 @@ class PaymentScreen(QWidget):
                     'EatWhere': self.EatWhere
                 }
 
+                save_order_to_database(username=self.username, order_number=order_details['order_number'],
+                                       total_price=order_details['total_price'], eat_where=order_details['EatWhere'],
+                                       cart=self.cart)
+
                 # Open AdminDisplay window with order details
                 self.admin_display = AdminDisplay(orders=[order_details])
                 self.admin_display.show()
@@ -373,6 +368,10 @@ class PaymentScreen(QWidget):
                     'EatWhere': self.EatWhere
                 }
 
+                # Pass the EatWhere parameter to save_order_to_database
+                save_order_to_database(self.username, order_details['order_number'], order_details['total_price'],
+                                       order_details['EatWhere'], self.cart)
+
                 # Open AdminDisplay window with order details
                 self.admin_display = AdminDisplay(orders=[order_details])
                 self.admin_display.show()
@@ -381,7 +380,7 @@ class PaymentScreen(QWidget):
     def show_admin_window(self):
       pass
 
-def get_menu_data_from_database():
+def get_menu_data_from_database(username):
     menu_data = {}
     try:
         db = mysql.connector.connect(
@@ -392,10 +391,10 @@ def get_menu_data_from_database():
         )
         if db:
             cursor = db.cursor(dictionary=True)
-            cursor.execute("SELECT name, price, category FROM menu")
+            # 사용자가 주문한 메뉴 데이터만 가져오도록 WHERE 절 추가
+            cursor.execute("SELECT name, price, category FROM menu WHERE username = %s", (username,))
             rows = cursor.fetchall()
             for row in rows:
-                print(row)
                 name = row["name"]
                 price = row["price"]
                 category = row["category"]
@@ -408,10 +407,33 @@ def get_menu_data_from_database():
         pass
     return menu_data
 
+def save_order_to_database(username, order_number, total_price, eat_where, cart):
+    try:
+        db = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="1234",
+            database="kiosk"
+        )
+        if db:
+            cursor = db.cursor()
+            items = json.dumps(cart, default=str, ensure_ascii=False)
+
+            insert_query = """
+            INSERT INTO menu_order (username, order_number, total_price, eat_where, items)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            cursor.execute(insert_query, (username, order_number, total_price, eat_where, items))
+            db.commit()
+            cursor.close()
+            db.close()
+            print("Order saved successfully")
+    except mysql.connector.Error as e:
+        print("Error saving order to database:", e)
 
 if __name__ == "__main__":
     app = QApplication([])
-    menu_data = get_menu_data_from_database()
+    menu_data = get_menu_data_from_database(username)
     main_window = NormalWindow(menu_data)
     main_window.show()
     sys.exit(app.exec_())

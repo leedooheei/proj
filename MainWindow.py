@@ -262,16 +262,14 @@ class MainWindow(QMainWindow):
     def go_normal_order(self):
         from Normal import NormalWindow, get_menu_data_from_database
         self.close()
-        menu_data = get_menu_data_from_database()
-        self.normal_window = NormalWindow(menu_data)
+        menu_data = get_menu_data_from_database(self.username)  # 데이터베이스에서 메뉴 데이터 가져오기
+        self.normal_window = NormalWindow(username=self.username, menu_data=menu_data, EatWhere=self.eat_where)
         self.normal_window.show()
-
 
     def go_voice(self):
         self.close()
         self.voice_window = VoiceKiosk()
         self.voice_window.show()
-
 
     def go_recommend(self):
         from Recommend import RecommandOrder

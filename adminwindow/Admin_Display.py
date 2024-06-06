@@ -1,4 +1,5 @@
-import socket
+import sys
+import mysql.connector
 import json
 from PyQt5.QtCore import QThread, pyqtSignal, QDateTime, QTimer
 from PyQt5.QtWidgets import QLabel, QWidget, QVBoxLayout, QGridLayout, QApplication, QFrame
@@ -11,6 +12,7 @@ class AdminDisplay(QWidget):
         self.setGeometry(0, 0, 1024, 600)
         self.username = username
         self.orders = orders
+        self.displayed_order_ids = set()  # 이미 표시된 주문 ID를 추적
 
         self.grid_layout = QGridLayout()
 
@@ -36,24 +38,58 @@ class AdminDisplay(QWidget):
                 frame.setFrameShape(QFrame.Box)
                 frame.setFrameShadow(QFrame.Raised)
                 frame.setLineWidth(2)
-                self.grid_layout.addWidget(frame, i+1, j, 1, 1)
+                self.grid_layout.addWidget(frame, i + 1, j, 1, 1)
 
         self.grid_layout.addLayout(self.order_layout, 1, 1, 1, 1)  # 주문 목록이 더 큰 공간을 차지하도록 조정
 
         self.setLayout(self.grid_layout)
 
-        self.client_thread = ClientThread()
-        self.client_thread.order_received.connect(self.display_order_info)
-        self.client_thread.start()
+        self.polling_timer = QTimer(self)
+        self.polling_timer.timeout.connect(self.poll_orders)
+        self.polling_timer.start(5000)  # 5초마다 데이터베이스를 폴링
 
-    def display_order_info(self, order_info_json):
-        order_info = json.loads(order_info_json)
+    def poll_orders(self):
+        try:
+            connection = mysql.connector.connect(
+                host="localhost",
+                user="root",
+                password="1234",
+                database="kiosk"
+            )
+            cursor = connection.cursor()
+            query = "SELECT * FROM menu_order WHERE username = %s ORDER BY created_at DESC"
+            cursor.execute(query, (self.username,))
+            orders = cursor.fetchall()
+
+            for order in orders:
+                order_id, order_number, total_price, eat_where, items, created_at = order
+                if order_id not in self.displayed_order_ids:
+                    self.displayed_order_ids.add(order_id)
+                    order_info = {
+                        "order_number": order_number,
+                        "total_price": total_price,
+                        "EatWhere": eat_where,
+                        "cart": json.loads(items),
+                        "created_at": created_at
+                    }
+                    self.display_order_info(order_info)
+
+        except mysql.connector.Error as e:
+            print("MySQL 오류:", e)
+
+        finally:
+            if connection.is_connected():
+                cursor.close()
+                connection.close()
+
+    def display_order_info(self, order_info):
         order_number = order_info['order_number']
         total_price = order_info['total_price']
         eat_where = order_info['EatWhere']
         cart = order_info['cart']
+        created_at = order_info['created_at']
 
-        order_details = f"Order #{order_number}\nTotal Price: {total_price}\nEat Where: {eat_where}\nItems:\n"
+        order_details = f"Order #{order_number}\nTotal Price: {total_price}\nEat Where: {eat_where}\nOrder Time: {created_at}\nItems:\n"
         for item in cart:
             name = item['name']
             price = item['price']
@@ -68,21 +104,7 @@ class AdminDisplay(QWidget):
         self.current_time_label.setText(current_time.toString("yyyy-MM-dd hh:mm:ss"))
 
 
-class ClientThread(QThread):
-    order_received = pyqtSignal(str)
-
-    def run(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.connect(("127.0.0.1", 12345))
-            while True:
-                data = client_socket.recv(1024).decode("utf-8")
-                if data:
-                    self.order_received.emit(data)
-
-
 if __name__ == "__main__":
-    import sys
-
     def main():
         app = QApplication(sys.argv)
         display = AdminDisplay()

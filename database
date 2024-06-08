@@ -2,7 +2,6 @@ create database kiosk;
 use kiosk;
 
 CREATE INDEX username_index ON users(username);
-
 CREATE TABLE menu (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(255) NOT NULL,
@@ -17,6 +16,7 @@ CREATE TABLE menu (
     detail5 VARCHAR(255),
     FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
 );
+select * from menu;
 
 CREATE TABLE IF NOT EXISTS details (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -49,3 +49,18 @@ VALUES
 
 
 select * from menu where username = 'abc123';
+
+create table menu_order (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username varchar(255) not Null,
+    order_number INT NOT NULL,
+    total_price DECIMAL(10, 2) NOT NULL,
+    eat_where VARCHAR(50) NOT NULL,
+    items TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+); 
+
+select * from menu_order;
+
+select * from menu_order;
+

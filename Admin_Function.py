@@ -35,6 +35,22 @@ class AdminFunctionWindow(QMainWindow):
         setting_button = QPushButton("환경 설정")
         setting_button.clicked.connect(self.go_to_settingwindow)
         main_layout.addWidget(setting_button)
+        exit_button = QPushButton("나가기")
+        exit_button.clicked.connect(lambda: self.exit_admin_window(username))
+        main_layout.addWidget(exit_button)
+
+
+
+    def exit_admin_window(self,username):
+        self.close()  # 현재 창을 닫음
+        self.open_main_window(username)  # MainWindow를 엶
+
+    def open_main_window(self, username):
+        from MainWindow import MainWindow
+        self.main_window = MainWindow(username=username)  # MainWindow 인스턴스 생성
+        self.main_window.show()  # MainWindow를 보여줌
+
+
     def connect_database(self):
         try:
             db = mysql.connector.connect(
@@ -457,9 +473,9 @@ class UpdateMenuDialog(QDialog):
         cancel_button.clicked.connect(self.close)
         button_layout.addWidget(cancel_button)
         if menu_info:
-            self.menu_name_entry.setText(menu_info[1])
+            self.menu_name_entry.setText(menu_info[2])
             self.menu_price_entry.setText(str(menu_info[2]))
-            category_index = self.category_combo.findText(menu_info[3])
+            category_index = self.category_combo.findText(str(menu_info[3]))
             if category_index != -1:
                 self.category_combo.setCurrentIndex(category_index)
     def update_menu(self):

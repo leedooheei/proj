@@ -45,6 +45,8 @@ class OrderNumberManager:
     def reset_order_number(self):
         self.current_order_number = 1
 
+
+
 class NormalWindow(QMainWindow):
     def __init__(self, username, menu_data, EatWhere=None):
         super(NormalWindow, self).__init__()
@@ -56,7 +58,6 @@ class NormalWindow(QMainWindow):
         self.voice_thread.start()
         self.initUI()
         self.EatWhere = EatWhere
-
 
     def process_menu_data(self):
         # menu_data를 처리하여 장바구니 리스트를 반환
@@ -285,12 +286,11 @@ class PaymentScreen(QWidget):
         self.counter_payment_button.setStyleSheet("font-size: {}pt; height: 200px; background-color: white;".format(self.font_size))
         self.counter_payment_button.clicked.connect(self.select_counter_payment)
 
-
         self.select_button = QPushButton("선택", self)
-        self.select_button.setStyleSheet("background-color: orange; color: white; font-size: 16pt; border-radius: 20px;")
+        self.select_button.setStyleSheet(
+            "background-color: orange; color: white; font-size: 16pt; border-radius: 20px;")
         self.select_button.clicked.connect(self.process_selection)
         self.select_button.setFixedSize(300, 50)
-
 
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.card_payment_button)
@@ -310,7 +310,6 @@ class PaymentScreen(QWidget):
         self.close()
         self.orderMain = NormalWindow()
         self.orderMain.show()
-
 
     def select_card_payment(self):
         self.selected_payment = "카드결제"
@@ -347,9 +346,10 @@ class PaymentScreen(QWidget):
                     'EatWhere': self.EatWhere
                 }
 
-                save_order_to_database(username=self.username, order_number=order_details['order_number'],
-                                       total_price=order_details['total_price'], eat_where=order_details['EatWhere'],
-                                       cart=self.cart)
+                # Modify this to call save_order_to_db function
+                save_order_to_db(username=self.username, order_number=order_details['order_number'],
+                                 total_price=order_details['total_price'], eat_where=order_details['EatWhere'],
+                                 items=self.cart)
 
                 # Open AdminDisplay window with order details
                 self.admin_display = AdminDisplay(orders=[order_details])
@@ -368,9 +368,9 @@ class PaymentScreen(QWidget):
                     'EatWhere': self.EatWhere
                 }
 
-                # Pass the EatWhere parameter to save_order_to_database
-                save_order_to_database(self.username, order_details['order_number'], order_details['total_price'],
-                                       order_details['EatWhere'], self.cart)
+                # Pass the EatWhere parameter to save_order_to_db
+                save_order_to_db(self.username, order_details['order_number'], order_details['total_price'],
+                                 order_details['EatWhere'], self.cart)
 
                 # Open AdminDisplay window with order details
                 self.admin_display = AdminDisplay(orders=[order_details])
@@ -378,7 +378,7 @@ class PaymentScreen(QWidget):
                 self.hide()
 
     def show_admin_window(self):
-      pass
+        pass
 
 def get_menu_data_from_database(username):
     menu_data = {}
@@ -392,48 +392,54 @@ def get_menu_data_from_database(username):
         if db:
             cursor = db.cursor(dictionary=True)
             # 사용자가 주문한 메뉴 데이터만 가져오도록 WHERE 절 추가
-            cursor.execute("SELECT name, price, category FROM menu WHERE username = %s", (username,))
+            cursor.execute("SELECT name, price, category, image FROM menu WHERE username = %s", (username,))
             rows = cursor.fetchall()
             for row in rows:
                 name = row["name"]
                 price = row["price"]
                 category = row["category"]
+                image = row["image"]
                 if category not in menu_data:
                     menu_data[category] = []
-                menu_data[category].append({"name": name, "price": price})
+                menu_data[category].append({"name": name, "price": price, "image": image})
             cursor.close()
             db.close()
     except mysql.connector.Error as e:
         pass
     return menu_data
 
-def save_order_to_database(username, order_number, total_price, eat_where, cart):
+
+def save_order_to_db(username, order_number, total_price, eat_where, items):
     try:
-        db = mysql.connector.connect(
+        connection = mysql.connector.connect(
             host="localhost",
             user="root",
             password="1234",
             database="kiosk"
         )
-        if db:
-            cursor = db.cursor()
-            items = json.dumps(cart, default=str, ensure_ascii=False)
+        cursor = connection.cursor()
 
-            insert_query = """
-            INSERT INTO menu_order (username, order_number, total_price, eat_where, items)
-            VALUES (%s, %s, %s, %s, %s)
-            """
-            cursor.execute(insert_query, (username, order_number, total_price, eat_where, items))
-            db.commit()
-            cursor.close()
-            db.close()
-            print("Order saved successfully")
+        insert_query = """
+        INSERT INTO menu_order (username, order_number, total_price, eat_where, items)
+        VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor.execute(insert_query, (username, order_number, total_price, eat_where, json.dumps(items)))
+
+        connection.commit()
+
     except mysql.connector.Error as e:
-        print("Error saving order to database:", e)
+        print("MySQL 오류:", e)
+
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
 
 if __name__ == "__main__":
     app = QApplication([])
-    menu_data = get_menu_data_from_database(username)
+    username = "user"
+    menu_data = get_menu_data_from_database(username = username)
     main_window = NormalWindow(menu_data)
     main_window.show()
     sys.exit(app.exec_())

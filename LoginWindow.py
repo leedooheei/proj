@@ -136,11 +136,12 @@ class LoginWindow(QMainWindow):
                 self.open_kiosk_window(username)
 
     def open_admin_window(self, username):
+        print("open_admin_window - Username:", username)
+
         from adminwindow.Admin_Display import AdminDisplay
         self.username = username
-        admin_window = AdminDisplay(username=self.username_edit.text())  # username을 AdminDisplay에 전달
-        admin_window.show()
-        self.close()
+        self.admin_window = AdminDisplay(username=self.username)
+        self.admin_window.show()  # 수정된 부분
 
     def open_kiosk_window(self,username):
         from MainWindow import MainWindow

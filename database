@@ -1,12 +1,13 @@
 create database kiosk;
 use kiosk;
 
+
 CREATE INDEX username_index ON users(username);
 CREATE TABLE menu (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    price DECIMAL(10,2) NOT NULL,
+    price DECIMAL(10 , 2 ) NOT NULL,
     category VARCHAR(255) NOT NULL,
     image BLOB,
     detail1 VARCHAR(255),
@@ -14,20 +15,58 @@ CREATE TABLE menu (
     detail3 VARCHAR(255),
     detail4 VARCHAR(255),
     detail5 VARCHAR(255),
-    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+    FOREIGN KEY (username)
+        REFERENCES users (username)
+        ON DELETE CASCADE
 );
 select * from menu;
 
-CREATE TABLE IF NOT EXISTS details (
+DROP TABLE IF EXISTS details;
+
+CREATE TABLE details (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    menu_id INT NOT NULL,
     category VARCHAR(255) NOT NULL,
-    detail VARCHAR(255) NOT NULL
+    detail VARCHAR(255) NOT NULL,
+    FOREIGN KEY (menu_id) REFERENCES menu(id) ON DELETE CASCADE
 );
+
+DELIMITER //
+
+CREATE TRIGGER after_menu_insert
+AFTER INSERT ON menu
+FOR EACH ROW
+BEGIN
+    DECLARE detail_value VARCHAR(255);
+    DECLARE detail_index INT DEFAULT 1;
+
+    simple_loop: LOOP
+        CASE detail_index
+            WHEN 1 THEN SET detail_value = NEW.detail1;
+            WHEN 2 THEN SET detail_value = NEW.detail2;
+            WHEN 3 THEN SET detail_value = NEW.detail3;
+            WHEN 4 THEN SET detail_value = NEW.detail4;
+            WHEN 5 THEN SET detail_value = NEW.detail5;
+            ELSE LEAVE simple_loop;
+        END CASE;
+
+        IF detail_value IS NOT NULL THEN
+            INSERT INTO details (menu_id, category, detail) VALUES (NEW.id, NEW.category, detail_value);
+        END IF;
+
+        SET detail_index = detail_index + 1;
+    END LOOP simple_loop;
+END //
+
+DELIMITER ;
+
+select * from details;
 
 CREATE TABLE IF NOT EXISTS categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL
 );
+
 
 drop table users;
 CREATE TABLE users (
@@ -36,7 +75,6 @@ CREATE TABLE users (
     password VARCHAR(255) NOT NULL,
     managerkey VARCHAR(255) DEFAULT '1234'
 );
-select * from users;
 
 INSERT INTO menu (username, name, price, category, detail1, detail2, detail3, detail4, detail5) 
 VALUES 
@@ -47,6 +85,9 @@ VALUES
 ('qwer1', '블루베리스무디', 40000, '음료', '블루베리스무디', NULL, NULL, NULL, NULL),
 ('qwer1', '완두콩빵', 40000, '빵', '완두콩빵', NULL, NULL, NULL, NULL);
 
+INSERT INTO menu (username, name, price, category, detail1, detail2, detail3, detail4, detail5) 
+VALUES 
+('qwer1', '펕죽', 7000, '죽', '팥', '밥', '병문안', '건강', NULL);
 
 select * from menu where username = 'abc123';
 
@@ -60,7 +101,18 @@ create table menu_order (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ); 
 
-select * from menu_order;
+CREATE TABLE order_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    item_name VARCHAR(255) NOT NULL,
+    item_price DECIMAL(10, 2) NOT NULL,
+    item_quantity INT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES menu_order(id)
+);
+
+select * from order_items;
 
 select * from menu_order;
+
+select payment_method from menu_order;
 

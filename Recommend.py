@@ -8,46 +8,30 @@ from PyQt5.QtWidgets import *
 
 logging.basicConfig(filename='app.log', level=logging.DEBUG)
 
-
 class RecommandOrder(QMainWindow):
-    def __init__(self, username=None, parent=None):
+    db_connection = None
+
+    def __init__(self, username=None, menu_data=None, EatWhere=None, parent=None):
         super(RecommandOrder, self).__init__(parent)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setWindowTitle('메뉴 추천')
         self.selected_details = []
-        self.PageRecommand = QWidget()
+        self.menu_data = menu_data
+        self.EatWhere = EatWhere
         self.username = username
-        self.category_pages = None
-        self.setup_ui()
+        self.selectedCategory = None
+        self.category_buttons = []  # Initialize an empty list for category buttons
 
+        self.setup_ui()
         self.db_connection = self.connect_to_db()
-        if self.db_connection:
-            logging.info("데이터베이스에 성공적으로 연결되었습니다.")
+
+        if not self.db_connection:
+            logging.error("데이터베이스 연결에 실패했습니다.")
+        else:
             categories = self.fetch_categories_from_db()
             if categories:
-                logging.info("카테고리를 성공적으로 불러왔습니다.")
-                self.category_pages = QStackedWidget(self.PageRecommand)
-                self.create_category_buttons(categories, self.category_pages)
+                self.create_category_buttons(categories)
             else:
                 logging.error("카테고리를 불러오는데 실패했습니다.")
-        else:
-            logging.error("데이터베이스 연결에 실패했습니다.")
-
-    def connect_to_db(self):
-        try:
-            db = mysql.connector.connect(
-                host="localhost",
-                user="root",
-                password="1234",
-                database="kiosk"
-            )
-            logging.info("MySQL 데이터베이스에 성공적으로 연결되었습니다.")
-            QMessageBox.information(self, "연결 성공", "MySQL 데이터베이스에 성공적으로 연결되었습니다.")
-            return db
-        except mysql.connector.Error as e:
-            QMessageBox.warning(self, "연결 실패", f"MySQL 데이터베이스 연결 중 오류 발생: {str(e)}")
-            logging.error(f"MySQL 데이터베이스 연결 중 오류 발생: {str(e)}")
-            return None
 
     def setup_ui(self):
         self.setFixedSize(480, 830)
@@ -55,22 +39,18 @@ class RecommandOrder(QMainWindow):
         self.BaseWidget.setGeometry(0, 0, 480, 830)
         self.BaseWidget.setStyleSheet("background-color:rgb(255,255,255);")
         self.setCentralWidget(self.BaseWidget)
+
+        self.FontInfo = QFont("Cafe24 Ssurround Bold", 15)
+        self.FontName = QFont("Cafe24 Ssurround Bold", 12)
+
         self.RCOrderStackWidget = QStackedWidget(self.BaseWidget)
         self.RCOrderStackWidget.setGeometry(QRect(0, 110, 480, 720))
         self.RCOrderStackWidget.setStyleSheet("background-color:rgb(255,255,255);")
-        self.Expendingsize = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        self.FontInfo = QFont()
-        self.FontInfo.setFamily(u"Cafe24 Ssurround Bold")
-        self.FontInfo.setPointSize(15)
-        self.FontName = QFont()
-        self.FontName.setFamily(u"Cafe24 Ssurround Bold")
-        self.FontName.setPointSize(25)
-
-        self.setup_detail_page()
         self.BtnGoHome = QPushButton(self.BaseWidget)
         self.BtnGoHome.setGeometry(10, 40, 60, 60)
-        self.BtnGoHome.setText("집")
+        self.BtnGoHome.setText("홈")
+        self.BtnGoHome.clicked.connect(self.back_logic)
 
         self.LblIntro = QLabel(self.BaseWidget)
         self.LblIntro.setGeometry(QRect(90, 40, 240, 60))
@@ -88,68 +68,85 @@ class RecommandOrder(QMainWindow):
         self.BtnZoomout = self.make_zoom_btn("+", 410, 40, 60, 60)
 
         self.setup_category_page()
+        self.setup_detail_page()
         self.setup_result_page()
+
         self.RCOrderStackWidget.addWidget(self.PageRecommand)
         self.RCOrderStackWidget.addWidget(self.PageDetail)
         self.RCOrderStackWidget.addWidget(self.PageResult)
         self.RCOrderStackWidget.setCurrentWidget(self.PageRecommand)
 
-        self.BtnGoHome.clicked.connect(self.back_logic)
+
+    def make_zoom_btn(self, text, x, y, width, height):
+        btn = QPushButton(text, self.BaseWidget)
+        btn.setGeometry(QRect(x, y, width, height))
+        btn.setStyleSheet(
+            "border-radius: 30px; border: 2px solid rgba(0,0,0,0); background-color: rgba(0,176,246,150); color: rgba(0,0,0,150)")
+        btn.setFont(self.FontInfo)
+
+        if text == "-":
+            btn.clicked.connect(self.zoom_in_clicked)
+        elif text == "+":
+            btn.clicked.connect(self.zoom_out_clicked)
+
+        return btn
+
+    def zoom_in_clicked(self):
+        pass
+
+    def zoom_out_clicked(self):
+        pass
+
+    def setup_category_page(self):
+        self.PageRecommand = QWidget()
+        self.PageRecommand.setGeometry(QRect(0, 0, 480, 500))
+        self.RCOrderStackWidget.addWidget(self.PageRecommand)  # 이 코드가 필요합니다
 
     def setup_detail_page(self):
         self.PageDetail = QWidget()
-        self.PageDetail.setGeometry(QRect(0, 0, 480, 700))
-        self.make_rec_btn()
+        self.PageDetail.setGeometry(QRect(0, 0, 480, 700))  # Ensure correct geometry
+        self.detailLayout = QVBoxLayout(self.PageDetail)
+        self.detailTitle = QLabel("세부 사항 선택")
+        self.detailTitle.setFont(self.FontInfo)
+        self.detailLayout.addWidget(self.detailTitle)
+        self.detailButtons = []  # Ensure this list is used to track detail buttons
 
-        self.BtnCheckResult = QPushButton(self.PageRecommand)
-        self.BtnCheckResult.setGeometry(QRect(100, 625, 280, 80))
-        self.BtnCheckResult.setText("다        음")
-        self.BtnCheckResult.setStyleSheet(
-            "border-radius: 40px; border: 2px solid rgba(0,0,0,0); background-color: rgba(240,136,10,150); color: rgba(0,0,0,150)")
-        self.BtnCheckResult.clicked.connect(self.go_detail_page)
-        self.BtnCheckResult.setEnabled(False)
+        # Setup the button to proceed to the next page (Result Page)
+        self.BtnGoToNextPage = QPushButton(self.PageDetail)
+        self.BtnGoToNextPage.setGeometry(QRect(100, 540, 280, 60))
+        self.BtnGoToNextPage.setText("선택하기")
+        self.BtnGoToNextPage.setStyleSheet(
+            "border-radius: 30px; border: 2px solid rgba(0,0,0,0); background-color: rgba(0,176,246,150); color: rgba(0,0,0,150)")
+        self.BtnGoToNextPage.setFont(self.FontInfo)
+        self.BtnGoToNextPage.clicked.connect(self.go_detail_page)
+        self.detailLayout.addWidget(self.BtnGoToNextPage)
 
-    def make_rec_btn(self):
-        self.FrameRecBtn = QFrame(self.PageRecommand)
-        self.FrameRecBtn.setGeometry(QRect(0, 0, 480, 700))
+        # Initialize BtnCheckDetailResult here
+        self.BtnCheckDetailResult = QPushButton("메뉴 확인 (0)", self.PageDetail)
+        self.BtnCheckDetailResult.setFont(self.FontName)
+        self.BtnCheckDetailResult.setStyleSheet(
+            "border-radius: 21px; background-color: rgba(0,176,246,200); color: rgb(255,255,255);")
+        self.BtnCheckDetailResult.clicked.connect(self.go_result_page)
+        self.detailLayout.addWidget(self.BtnCheckDetailResult)
 
-    def make_label(self, text, geometry, Vsize):
-        label = QLabel(self.FrameRecBtn)
-        label.setText(text)
-        label.setAlignment(Qt.AlignCenter)
-        label.setFont(self.FontInfo)
-        label.setStyleSheet("font-size: 40px;")
-        label.setGeometry(0, geometry, 480, Vsize)
-        return label
+        self.RCOrderStackWidget.addWidget(self.PageDetail)  # Add PageDetail to stack widget
 
-    def make_layout(self, geometry, ysize):
-        frame = QFrame(self.FrameRecBtn)
-        layout = QGridLayout()
-        layout.setSpacing(20)
-        frame.setLayout(layout)
-        frame.setGeometry(15, geometry, 450, ysize)
-        return frame, layout
+    def setup_result_page(self):
+        self.PageResult = QWidget()
+        self.PageResult.setGeometry(QRect(0, 0, 480, 700))
+        self.resultLayout = QVBoxLayout(self.PageResult)
+        self.resultLabel = QLabel("선택된 메뉴")
+        self.resultLabel.setFont(self.FontInfo)
+        self.resultLayout.addWidget(self.resultLabel)
+        self.resultMenuLayout = QVBoxLayout()
+        self.resultLayout.addLayout(self.resultMenuLayout)
 
-    def fetch_categories_from_db(self):
-        if not self.db_connection:
-            print("No database connection available.")
-            return []
+    def create_category_buttons(self, categories):
+        if not categories:
+            return
 
-        try:
-            cursor = self.db_connection.cursor()
-            sql = "SELECT DISTINCT category FROM menu WHERE username = %s"
-            cursor.execute(sql, (self.username,))
-            result = cursor.fetchall()
-            categories = [row[0] for row in result]
-            return categories
-        except mysql.connector.Error as e:
-            print(f"Failed to fetch categories: {e}")
-            return []
-
-    def create_category_buttons(self, categories, category_pages=None):
-        if category_pages is None:
-            category_pages = QStackedWidget(self.PageRecommand)
-            category_pages.setGeometry(15, 200, 450, 410)
+        category_pages = QStackedWidget(self.PageRecommand)
+        category_pages.setGeometry(15, 200, 450, 410)
 
         num_pages = (len(categories) + 3) // 4
         pages = []
@@ -182,237 +179,146 @@ class RecommandOrder(QMainWindow):
             row = (i % 4) // 2
             col = (i % 4) % 2
             pages[page_index].layout().addWidget(btn, row, col, 1, 1)
-    def makeMenuBtn(self, text):
-        btn = QPushButton(text)
-        btn.setFont(self.FontName)
-        btn.setFlat(True)
-        btn.setSizePolicy(self.Expendingsize)
-        btn.setStyleSheet(
-            "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgba(255,126,0,200); color: rgb(255,255,255);")
-        btn.clicked.connect(partial(self.category_btn_clicked, btn))
-        return btn
+
+            # Add selection button below the category buttons
+            select_btn = QPushButton("선택")
+            select_btn.setFont(self.FontName)
+            select_btn.setStyleSheet(
+                "border-radius: 21px; background-color: rgba(0,176,246,200); color: rgb(255,255,255);")
+            select_btn.clicked.connect(partial(self.category_select_button_clicked, category))
+            pages[page_index].layout().addWidget(select_btn, row + 1, col, 1, 1)  # Place below the category button
+
+    def category_select_button_clicked(self, category):
+        self.selectedCategory = category
+        for btn in self.category_buttons:
+            btn.setStyleSheet(
+                "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgba(255,126,0,200); color: rgb(255,255,255);")
+        self.BtnCheckDetailResult.setText("메뉴 확인 (0)")
+        self.RCOrderStackWidget.setCurrentWidget(self.PageRecommand)
 
     def make_category_btn(self, text):
         btn = QPushButton(text)
         btn.setFont(self.FontName)
         btn.setFlat(True)
-        btn.setSizePolicy(self.Expendingsize)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         btn.setStyleSheet(
             "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgba(255,126,0,200); color: rgb(255,255,255);")
         btn.clicked.connect(partial(self.category_btn_clicked, btn))
+        self.category_buttons.append(btn)  # Append button to list for tracking
         return btn
 
     def category_btn_clicked(self, btn):
-        for button in self.PageRecommand.findChildren(QPushButton):
-            if button != self.BtnCheckResult and button != self.BtnZoomin and button != self.BtnZoomout:
-                button.setStyleSheet(
-                    "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgba(255,126,0,200); color: rgb(255,255,255);")
-        btn.setStyleSheet('border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgb(255,126,0);')
-        self.BtnCheckResult.setStyleSheet(
-            "border-radius: 40px; border: 2px solid rgba(0,0,0,0); background-color: rgba(240,136,10,255); color: rgba(255,255,255,255)")
-        self.BtnCheckResult.setEnabled(True)
-        self.selectedCategory = btn.text()
-        self.selectedDetails = []
+        try:
+            self.selectedCategory = btn.text()
+            self.load_detail_buttons()
+            self.RCOrderStackWidget.setCurrentWidget(self.PageDetail)
+        except Exception as e:
+            logging.error(f"카테고리 버튼 클릭 중 오류 발생: {e}")
+    def load_detail_buttons(self):
+        try:
+            for btn in self.detailButtons:
+                btn.setParent(None)
+            self.detailButtons = []
 
-    def navigate_pages(self, stacked_widget, direction):
-        current_index = stacked_widget.currentIndex()
-        new_index = current_index + direction
-        if 0 <= new_index < stacked_widget.count():
-            stacked_widget.setCurrentIndex(new_index)
+            if not self.selectedCategory:
+                logging.warning("카테고리 선택 중 디테일 오류 발생.")
+                return
 
-    def go_detail_page(self):
-        self.RCOrderStackWidget.setCurrentWidget(self.PageDetail)
-        self.BtnGoHome.setText("뒤")
-        self.LblRCResult.setHidden(True)
-        self.LblIntro.setHidden(True)
-        self.create_detail_buttons()
+            details = self.fetch_details_from_db(self.selectedCategory)
 
-    def setup_category_page(self):
-        self.PageRecommand = QWidget()
-        self.PageRecommand.setGeometry(QRect(0, 0, 480, 700))
-        self.BtnCheckResult = QPushButton(self.PageRecommand)
-        self.BtnCheckResult.setGeometry(QRect(100, 625, 280, 80))
-        self.BtnCheckResult.setText("다        음")
-        self.BtnCheckResult.setStyleSheet(
-            "border-radius: 40px; border: 2px solid rgba(0,0,0,0); background-color: rgba(240,136,10,150); color: rgba(0,0,0,150)")
-        self.BtnCheckResult.setFont(self.FontInfo)
-        self.BtnCheckResult.clicked.connect(self.go_detail_page)
-        self.BtnCheckResult.setEnabled(False)
+            if details:
+                for detail in details:
+                    btn = self.make_detail_btn(detail)
+                    self.detailButtons.append(btn)
+                    self.detailLayout.addWidget(btn)
+            else:
+                logging.warning(f"카테고리에서 디테일을 찾을 수 없음: {self.selectedCategory}")
 
-    def setup_result_page(self):
-        self.PageResult = QWidget()
-        self.PageResult.setGeometry(QRect(0, 0, 480, 700))
-        self.resultLayout = QVBoxLayout(self.PageResult)
-        self.resultLabel = QLabel("선택된 메뉴")
-        self.resultLabel.setFont(self.FontInfo)
-        self.resultLayout.addWidget(self.resultLabel)
-        self.resultMenuLayout = QVBoxLayout()
-        self.resultLayout.addLayout(self.resultMenuLayout)
+        except Exception as e:
+            logging.error(f"디테일 버튼을 로드 중 오류: {e}")
 
-        self.PageDetail = QWidget()
-        self.PageDetail.setGeometry(QRect(0, 0, 480, 700))
-
-    def create_detail_buttons(self):
-        self.detailLayout = QVBoxLayout(self.PageDetail)
-        self.detailTitle = QLabel("세부 사항 선택")
-        self.detailTitle.setFont(self.FontInfo)
-        self.detailLayout.addWidget(self.detailTitle)
-
-        details = self.fetch_details_from_db(self.selectedCategory)
-        self.detailButtons = []
-
-        for detail in details:
-            btn = self.make_detail_btn(detail)
-            self.detailLayout.addWidget(btn)
-            self.detailButtons.append(btn)
-        for detail in details:
-            btn = self.make_detail_btn(detail)
-            self.detailLayout.addWidget(btn)
-            self.detailButtons.append(btn)
-
-        self.BtnCheckDetailResult = QPushButton(self.PageDetail)
-        self.BtnCheckDetailResult.setGeometry(QRect(100, 625, 280, 80))
-        self.BtnCheckDetailResult.setText("메뉴 확인 (0)")
-        self.BtnCheckDetailResult.setStyleSheet(
-            "border-radius: 40px; border: 2px solid rgba(0,0,0,0); background-color: rgba(240,136,10,150); color: rgba(0,0,0,150)")
-        self.BtnCheckDetailResult.setFont(self.FontInfo)
-        self.BtnCheckDetailResult.clicked.connect(self.go_result_page)  # 수정된 부분
-        self.BtnCheckDetailResult.setEnabled(False)
-        self.detailLayout.addWidget(self.BtnCheckDetailResult)
     def make_detail_btn(self, text):
         btn = QPushButton(text)
         btn.setFont(self.FontName)
-        btn.setFlat(True)
-        btn.setSizePolicy(self.Expendingsize)
+        btn.setCheckable(True)
         btn.setStyleSheet(
-            "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgba(255,126,0,200); color: rgb(255,255,255);")
-        btn.clicked.connect(partial(self.detail_btn_clicked, btn))
+            "border-radius: 21px; background-color: rgba(0,176,246,200); color: rgb(255,255,255);")
+        btn.clicked.connect(self.detail_btn_clicked)
         return btn
 
-    def detail_btn_clicked(self, btn):
-        if btn.text() in self.selectedDetails:
-            self.selectedDetails.remove(btn.text())
-            btn.setStyleSheet(
-                "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgba(255,126,0,200); color: rgb(255,255,255);")
-        else:
-            self.selectedDetails.append(btn.text())
-            btn.setStyleSheet(
-                "border: 1px solid rgba(0,0,0,0); border-radius: 21px; background-color: rgb(255,126,0);")
-        filtered_menu_count = self.get_filtered_menu_count()
-        self.BtnCheckDetailResult.setText(f"메뉴 확인 ({filtered_menu_count})")
-        self.BtnCheckDetailResult.setEnabled(len(self.selectedDetails) > 0)
+    def detail_btn_clicked(self):
+        selected_details = [btn.text() for btn in self.detailButtons if btn.isChecked()]
+        self.selected_details = selected_details
+        self.BtnCheckDetailResult.setText(f"메뉴 확인 ({len(selected_details)})")
 
-    def toggle_detail(self, category, detail):
-        if detail in self.selected_details:
-            self.selected_details.remove(detail)
-        else:
-            self.selected_details.append(detail)
-
-    def show_filtered_menu(self):
-        if not self.selected_category or not self.selected_details:
-            print("카테고리와 디테일을 선택해주세요.")
-            return
-
-        print(f"카테고리: {self.selected_category}, 선택된 디테일: {self.selected_details}")
-
-    def get_filtered_menu_count(self):
-        if not self.db_connection:
-            return 0
-
-        try:
-            cursor = self.db_connection.cursor()
-            placeholders = ','.join(['%s'] * len(self.selectedDetails))
-            sql = f"SELECT COUNT(*) FROM menu WHERE category = %s AND name IN ({placeholders})"
-            cursor.execute(sql, (self.selectedCategory, *self.selectedDetails))
-            result = cursor.fetchone()
-            count = result[0] if result else 0
-            return count
-        except mysql.connector.Error as e:
-            print(f"필터링된 메뉴 수를 가져오지 못했습니다: {e}")
-            return 0
-
-    def fetch_details_from_db(self, category):
-        if not self.db_connection:
-            print("No database connection available.")
-            return []
-
-        try:
-            cursor = self.db_connection.cursor()
-            sql = f"SELECT detail1, detail2, detail3, detail4, detail5 FROM menu WHERE category = '{category}'"
-            cursor.execute(sql)
-            result = cursor.fetchall()
-            details = [detail for row in result for detail in row if detail]
-            return details
-        except mysql.connector.Error as e:
-            print(f"Failed to fetch details: {e}")
-            return []
+    def go_detail_page(self):
+        self.RCOrderStackWidget.setCurrentWidget(self.PageDetail)
 
     def go_result_page(self):
+        self.display_selected_menu()
         self.RCOrderStackWidget.setCurrentWidget(self.PageResult)
-        self.BtnGoHome.setText("뒤")
-        self.LblRCResult.setHidden(False)
-        self.LblIntro.setHidden(True)
-        self.display_filtered_menus()
 
-    def display_filtered_menus(self):
+    def display_selected_menu(self):
+        self.resultMenuLayout.setAlignment(Qt.AlignTop)
+        self.resultMenuLayout.setSpacing(5)
+
+        # Clear existing widgets from the layout
         for i in reversed(range(self.resultMenuLayout.count())):
             widget = self.resultMenuLayout.itemAt(i).widget()
-            if widget is not None:
-                widget.deleteLater()
+            if widget:
+                widget.setParent(None)
 
-        menus = self.fetch_filtered_menus()
-        for menu in menus:
-            label = QLabel(menu)
-            label.setFont(self.FontInfo)
-            self.resultMenuLayout.addWidget(label)
+        # Add selected menu items to the layout
+        for menu in self.selected_details:
+            lbl_menu = QLabel(menu)
+            lbl_menu.setFont(self.FontName)
+            lbl_menu.setStyleSheet("color: rgb(0, 0, 0);")
+            self.resultMenuLayout.addWidget(lbl_menu)
 
-    def fetch_filtered_menus(self):
-        if not self.db_connection:
-            return []
-
+    def connect_to_db(self):
+        try:
+            db_connection = mysql.connector.connect(
+                host="localhost",
+                user="root",
+                passwd="1234",
+                database="kiosk"
+            )
+            return db_connection
+        except mysql.connector.Error as err:
+            logging.error(f"Database connection error: {err}")
+            return None
+    def fetch_categories_from_db(self):
+        categories = []
         try:
             cursor = self.db_connection.cursor()
-            placeholders = ','.join(['%s'] * len(self.selectedDetails))
-            sql = f"SELECT name FROM menu WHERE category = %s AND detail IN ({placeholders})"
-            cursor.execute(sql, (self.selectedCategory, *self.selectedDetails))
-            result = cursor.fetchall()
-            menus = [row[0] for row in result]
-            return menus
-        except mysql.connector.Error as e:
-            print(f"Failed to fetch filtered menus: {e}")
-            return []
+            cursor.execute("SELECT DISTINCT category FROM menu WHERE username = %s", (self.username,))
+            categories = [item[0] for item in cursor.fetchall()]
+        except mysql.connector.Error as err:
+            logging.error(f"데이터베이스에 안맞는 카테고리 오류발생: {err}")
+        finally:
+            cursor.close()
+            return categories
 
-    def make_zoom_btn(self, text, x, y, w, h):
-        btn = QPushButton(self.BaseWidget)
-        btn.setGeometry(x, y, w, h)
-        btn.setFixedSize(w, h)
-        btn.setText(text)
-        btn.setStyleSheet(
-            "border: 1px solid rgba(0,0,0,0); border-radius: 16px; background-color: rgb(255,126,0); color: white; font-size: 70px;")
-        return btn
+    def fetch_details_from_db(self, category):
+        details = []
+        try:
+            cursor = self.db_connection.cursor()
+            cursor.execute("SELECT detail FROM details WHERE category = %s", (category,))
+            details = [item[0] for item in cursor.fetchall()]
+        except mysql.connector.Error as err:
+            logging.error(f"데이터베이스에 안맞는 카테고리 오류발생: {err}")
+        finally:
+            cursor.close()
+            return details
 
     def back_logic(self):
-        if self.RCOrderStackWidget.currentWidget() == self.PageRecommand:
-            from MainWindow import MainWindow
-            self.Main = MainWindow()
-            self.Main.show()
-            self.close()
-        elif self.RCOrderStackWidget.currentWidget() == self.PageDetail:
-            self.RCOrderStackWidget.setCurrentWidget(self.PageRecommand)
-            self.BtnGoHome.setText("집")
-            self.LblRCResult.setHidden(True)
-            self.LblIntro.setHidden(False)
-            self.selectedCategory = ""
-            self.selectedDetails = []
-        elif self.RCOrderStackWidget.currentWidget() == self.PageResult:
-            self.RCOrderStackWidget.setCurrentWidget(self.PageDetail)
-            self.BtnGoHome.setText("뒤")
-            self.LblRCResult.setHidden(True)
-            self.LblIntro.setHidden(True)
+        self.close()
 
-if __name__ == '__main__':
+def main():
     app = QApplication(sys.argv)
-    window = RecommandOrder(username='username')
-    window.show()
+    main_window = RecommandOrder()
+    main_window.show()
     sys.exit(app.exec_())
 
+if __name__ == "__main__":
+    main()

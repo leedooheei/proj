@@ -1,45 +1,70 @@
 
 
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, QIODevice, QByteArray, pyqtSignal, QBuffer
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget,
-    QHBoxLayout, QLineEdit, QFileDialog, QMessageBox, QScrollArea, QGroupBox,
-    QFormLayout, QListWidget, QDialog, QComboBox, QGridLayout, QListWidgetItem, QDialogButtonBox, QInputDialog
-)
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
 import sys
 import mysql.connector
 
 class AdminFunctionWindow(QMainWindow):
     def __init__(self, username=None, currentPW=None, parent=None):
         super(AdminFunctionWindow, self).__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint)
         self.db = self.connect_database()
         self.setWindowTitle("매니저 창")
         self.username = username
         print("Received username:", self.username)
         self.currentPW = currentPW
-        self.setGeometry(100, 100, 800, 480)
+        self.setGeometry(0, 0, 480, 830)
+        self.setFixedSize(480,830)
         self.central_widget = QWidget()
+        self.central_widget.setStyleSheet("background-color: rgb(255, 255, 255);")
         self.setCentralWidget(self.central_widget)
-        main_layout = QVBoxLayout()
-        self.central_widget.setLayout(main_layout)
-        add_menu_button = QPushButton("메뉴 추가")
+        managerLabel = QLabel("관리자 메뉴",self)
+        managerLabel.setFont(QFont("Noto Sans CJK KR Bold",30))
+        managerLabel.setAlignment(Qt.AlignCenter)
+        managerLabel.setGeometry(100,40,280,40)
+        btnContainer = QFrame(self.central_widget)
+        btnContainer.setGeometry(20,90,440,600)
+        btnContainer.setFixedSize(440,600)
+        btngrid = QGridLayout(btnContainer)
+        btngrid.setVerticalSpacing(20)
+        btngrid.setHorizontalSpacing(10)
+
+        add_menu_button = self.create_button("ad-menuadd.png")
         add_menu_button.clicked.connect(self.add_menu)
-        main_layout.addWidget(add_menu_button)
-        delete_menu_button = QPushButton("메뉴 삭제")
-        delete_menu_button.clicked.connect(self.delete_menu)
-        main_layout.addWidget(delete_menu_button)
-        update_menu_button = QPushButton("메뉴 수정")
+        update_menu_button = self.create_button("ad-menuedit.png")
         update_menu_button.clicked.connect(self.update_menu)
-        main_layout.addWidget(update_menu_button)
-        setting_button = QPushButton("환경 설정")
+        delete_menu_button = self.create_button("ad-menudel.png")
+        delete_menu_button.clicked.connect(self.delete_menu)
+        setting_button = self.create_button("ad-set.png")
         setting_button.clicked.connect(self.go_to_settingwindow)
-        main_layout.addWidget(setting_button)
-        exit_button = QPushButton("나가기")
+
+        btngrid.addWidget(add_menu_button,0,0)
+        btngrid.addWidget(update_menu_button,0,1)
+        btngrid.addWidget(delete_menu_button,1,0)
+        btngrid.addWidget(setting_button,1,1)
+
+        exit_button = QPushButton("나       가       기",self)
+        exit_button.setGeometry(30,710,420,90)
+        exit_button.setStyleSheet("background-color: rgb(255,255,255);border: 4px solid rgb(255,136,0); color: rgb(255,136,0);")
+        exit_button.setFont(QFont("Noto Sans CJK KR Black", 40))
         exit_button.clicked.connect(lambda: self.exit_admin_window(username))
-        main_layout.addWidget(exit_button)
 
-
+    def create_button(self,image_path):
+        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        btn = QPushButton()
+        # 이미지를 버튼의 배경으로 설정하고, 이미지 크기를 버튼 크기에 맞게 조정
+        btn.setSizePolicy(sizePolicy)
+        btn.setStyleSheet(
+            f"QPushButton {{ background-image: url('img/AdminSetup/{image_path}');"
+            f"background-position: center;"
+            f"background-repeat: no-repeat;"
+            f"background-size: cover;"
+            f" border-radius: 5px;  "
+            f"border : 4px solid rgb(255,126,0)}}")
+        btn.setFlat(True)
+        return btn
 
     def exit_admin_window(self,username):
         self.close()  # 현재 창을 닫음

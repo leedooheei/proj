@@ -1,5 +1,8 @@
+import decimal
 import json
 import socket
+from decimal import Decimal
+
 import mysql.connector
 import pyttsx3
 import sys
@@ -48,22 +51,25 @@ class OrderNumberManager:
 
 
 class NormalWindow(QMainWindow):
-    def __init__(self, username, menu_data, EatWhere=None):
+
+    def __init__(self, username=None, menu_data=None, EatWhere=None):
         super(NormalWindow, self).__init__()
-        self.username = username  # 사용자 이름을 저장
+        self.username = username  # Initialize username attribute
         self.menu_data = menu_data
-        self.cart = self.process_menu_data()  # 메뉴 데이터를 처리하여 장바구니에 저장
+        self.cart = [] # 메뉴 데이터를 처리하여 장바구니에 저장
 
         self.voice_thread = VoiceThread()
         self.voice_thread.start()
-        self.initUI()
+
         self.EatWhere = EatWhere
+        self.initUI()
 
     def process_menu_data(self):
         # menu_data를 처리하여 장바구니 리스트를 반환
         cart_items = []
-        for menu in self.menu_data:
-            cart_items.append(menu)
+        for menu_list in self.menu_data.values():
+            for menu in menu_list:
+                cart_items.append(menu)
         return cart_items
 
     def initUI(self):
@@ -116,6 +122,7 @@ class NormalWindow(QMainWindow):
 
         payment_button = QPushButton("결제하기")
         payment_button.setStyleSheet("font-size: 30px; padding: 20px;")
+
         payment_button.clicked.connect(self.go_to_payment)
         main_layout.addWidget(payment_button)
 
@@ -133,14 +140,25 @@ class NormalWindow(QMainWindow):
         if not self.cart:
             self.play_order_no()
         else:
+            # 장바구니에 담긴 상품들을 콘솔에 출력
+            print("장바구니에 담긴 상품들:")
+            for item in self.cart:
+                print(f"{item['name']} - 가격: {item['price']}원")
+
             try:
-                # 사용자 이름을 PaymentScreen 인스턴스에 전달
+                if not isinstance(self.username, str):
+                    raise ValueError("사용자 이름이 문자열이 아닙니다.")
+                if not isinstance(self.EatWhere, str):
+                    raise ValueError("식사 장소 정보가 문자열이 아닙니다.")
+
                 self.payment_screen = PaymentScreen(self.username, self.cart, self.EatWhere)
                 self.payment_screen.payment_completed.connect(self.handle_payment_completed)
                 self.hide()
                 self.payment_screen.show()
+            except ValueError as ve:
+                print(f"오류 발생: {ve}")
             except Exception as e:
-                print("오류 발생:", e)
+                print("기타 오류 발생:", e)
                 sys.exit(1)
 
     def handle_counter_order_requested(self):
@@ -149,6 +167,7 @@ class NormalWindow(QMainWindow):
         self.show_normal_window()
 
     def show_normal_window(self):
+
         self.show()
 
     def play_order_menu_guide(self):
@@ -181,7 +200,7 @@ class NormalWindow(QMainWindow):
             item_layout = QHBoxLayout()
             item_widget.setLayout(item_layout)
 
-            item_label = QLabel(f"{item['name']} - 가격: {item['price']}원")
+            item_label = QLabel(f"{item['name']} - 가격: {str(item['price'])}원")
             item_layout.addWidget(item_label)
 
             quantity_label = QLabel("수량:")
@@ -204,45 +223,70 @@ class NormalWindow(QMainWindow):
 
             self.cart_item_layout.addWidget(item_widget)
 
-# 총 가격 업데이트
-    def update_total_price(self):
-        total_price = sum(item['price'] * item.get('quantity', 1) for item in self.cart)
-        self.total_price_label.setText(f"총 합계: {total_price}원")
-
-    def increase_quantity(self, menu):
-        menu['quantity'] += 1
-        self.update_cart_view()
-        self.update_total_price()
-
-    def decrease_quantity(self, menu):
-        if menu['quantity'] > 1:
-            menu['quantity'] -= 1
-            self.update_cart_view()
-            self.update_total_price()
-
-    def remove_from_cart(self, menu):
-        self.cart.remove(menu)
-        self.update_cart_view()  # 장바구니 뷰 업데이트
-        self.update_total_price()  # 총 가격 업데이트
-
     def handle_payment_completed(self, total_price):
         order_number_manager = OrderNumberManager()
         order_number = order_number_manager.generate_order_number()
+
         order_details = {
             'order_number': order_number,
             'cart': self.cart,
             'total_price': total_price,
-            'EatWhere': self.EatWhere
+            'EatWhere': self.EatWhere,
+            'payment_method': self.payment_screen.payment_method
         }
 
-        # 주문 정보를 관리자 디스플레이어로 전송
+        save_order_to_db(self.username, order_details['order_number'], order_details['total_price'],
+                         order_details['EatWhere'], order_details['payment_method'], self.cart)
 
+        send_order_to_server(order_details)
 
-        # 결제 완료 후 장바구니 비우기
         self.cart = []
         self.update_cart_view()
         self.update_total_price()
         self.show_normal_window()
+
+
+        self.return_to_main_window()
+
+
+
+import requests
+
+
+
+def send_order_to_server(order_details):
+    url = 'http://localhost:5000/orders'
+    headers = {'Content-Type': 'application/json; charset=utf-8'}
+
+    for item in order_details['cart']:
+        item['price'] = float(item['price'])  # Decimal을 float로 변환
+
+    try:
+        response = requests.post(url, json=order_details, headers=headers)
+        if response.status_code == 200:
+            print('주문 정보가 성공적으로 전송되었습니다.')
+        else:
+            print(f'주문 정보 전송 실패: {response.status_code}, {response.text}')
+    except Exception as e:
+        print(f'주문 정보 전송 요청 실패: {e}')
+
+
+
+def increase_quantity(self, menu):
+    menu['quantity'] += 1
+    self.update_cart_view()
+    self.update_total_price()
+
+def decrease_quantity(self, menu):
+    if menu['quantity'] > 1:
+        menu['quantity'] -= 1
+        self.update_cart_view()
+        self.update_total_price()
+
+def remove_from_cart(self, menu):
+    self.cart.remove(menu)
+    self.update_cart_view()  # 장바구니 뷰 업데이트
+    self.update_total_price()  # 총 가격 업데이트
 
 
 class PaymentScreen(QWidget):
@@ -308,7 +352,8 @@ class PaymentScreen(QWidget):
 
     def back_button_clicked(self):
         self.close()
-        self.orderMain = NormalWindow()
+        self.orderMain = NormalWindow(self.username
+                                      )
         self.orderMain.show()
 
     def select_card_payment(self):
@@ -330,33 +375,12 @@ class PaymentScreen(QWidget):
         self.selected_payment_button = button
 
     def process_selection(self):
-        from adminwindow.Admin_Display import AdminDisplay
         if self.selected_payment is None:
             QMessageBox.warning(self, "경고", "결제 방식을 선택해주세요.")
         else:
+            self.payment_method = self.selected_payment  # 선택된 결제 방법 저장
             if self.selected_payment == "카드결제":
-                print("카드결제 화면으로 이동합니다.")
-                print(self.EatWhere)
-                order_number_manager = OrderNumberManager()
-                order_number = order_number_manager.generate_order_number()
-                order_details = {
-                    'order_number': order_number,
-                    'cart': self.cart,
-                    'total_price': sum(item['price'] * item.get('quantity', 1) for item in self.cart),
-                    'EatWhere': self.EatWhere
-                }
-
-                # Modify this to call save_order_to_db function
-                save_order_to_db(username=self.username, order_number=order_details['order_number'],
-                                 total_price=order_details['total_price'], eat_where=order_details['EatWhere'],
-                                 items=self.cart)
-
-                # Open AdminDisplay window with order details
-                self.admin_display = AdminDisplay(orders=[order_details])
-                self.admin_display.show()
-                self.hide()
-
-            elif self.selected_payment == "카운터에서 결제":
+                # 카드 결제 처리 코드
                 print("장바구니에 담긴 상품들:", self.cart)
                 print(self.EatWhere)
                 order_number_manager = OrderNumberManager()
@@ -364,22 +388,46 @@ class PaymentScreen(QWidget):
                 order_details = {
                     'order_number': order_number,
                     'cart': self.cart,
-                    'total_price': sum(item['price'] * item.get('quantity', 1) for item in self.cart),
-                    'EatWhere': self.EatWhere
+                    'total_price': float(sum(item['price'] * item.get('quantity', 1) for item in self.cart)),
+                    'EatWhere': self.EatWhere,
+                    'payment_method': self.payment_method  # 추가
                 }
 
-                # Pass the EatWhere parameter to save_order_to_db
                 save_order_to_db(self.username, order_details['order_number'], order_details['total_price'],
-                                 order_details['EatWhere'], self.cart)
+                                 order_details['EatWhere'], order_details['payment_method'], self.cart)
 
-                # Open AdminDisplay window with order details
-                self.admin_display = AdminDisplay(orders=[order_details])
-                self.admin_display.show()
-                self.hide()
+                print("카드결제 화면으로 이동합니다.")
+                self.complete_payment()
 
-    def show_admin_window(self):
-        pass
+            elif self.selected_payment == "카운터에서 결제":
+                # 카운터 결제 처리 코드
+                print("장바구니에 담긴 상품들:", self.cart)
+                print(self.EatWhere)
+                order_number_manager = OrderNumberManager()
+                order_number = order_number_manager.generate_order_number()
+                order_details = {
+                    'order_number': order_number,
+                    'cart': self.cart,
+                    'total_price': float(sum(item['price'] * item.get('quantity', 1) for item in self.cart)),
+                    'EatWhere': self.EatWhere,
+                    'payment_method': self.payment_method  # 추가
+                }
 
+                save_order_to_db(self.username, order_details['order_number'], order_details['total_price'],
+                                 order_details['EatWhere'], order_details['payment_method'], self.cart)
+
+                # 주문 정보를 소켓을 통해 전송
+                send_order_to_server(order_details)
+
+                # 메인 창으로 돌아가기
+                self.complete_payment()
+
+    def complete_payment(self):
+        from MainWindow import MainWindow
+        self.main_window = MainWindow(self.username)
+
+        self.main_window.show()
+        self.close()
 def get_menu_data_from_database(username):
     menu_data = {}
     try:
@@ -407,9 +455,7 @@ def get_menu_data_from_database(username):
     except mysql.connector.Error as e:
         pass
     return menu_data
-
-
-def save_order_to_db(username, order_number, total_price, eat_where, items):
+def save_order_to_db(username, order_number, total_price, eat_where, payment_method, items):
     try:
         connection = mysql.connector.connect(
             host="localhost",
@@ -419,11 +465,24 @@ def save_order_to_db(username, order_number, total_price, eat_where, items):
         )
         cursor = connection.cursor()
 
-        insert_query = """
-        INSERT INTO menu_order (username, order_number, total_price, eat_where, items)
+        # 주문 정보 저장
+        insert_order_query = """
+        INSERT INTO menu_order (username, order_number, total_price, eat_where, payment_method)
         VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(insert_query, (username, order_number, total_price, eat_where, json.dumps(items)))
+        cursor.execute(insert_order_query, (username, order_number, total_price, eat_where, payment_method))
+        order_id = cursor.lastrowid  # 방금 삽입한 주문의 ID 가져오기
+
+        # 각 항목을 order_items 테이블에 저장
+        insert_item_query = """
+        INSERT INTO order_items (order_id, item_name, item_price, item_quantity)
+        VALUES (%s, %s, %s, %s)
+        """
+        for item in items:
+            item_name = item['name']
+            item_price = item['price']
+            item_quantity = item.get('quantity', 1)
+            cursor.execute(insert_item_query, (order_id, item_name, item_price, item_quantity))
 
         connection.commit()
 
@@ -436,10 +495,12 @@ def save_order_to_db(username, order_number, total_price, eat_where, items):
             connection.close()
 
 
+
+
 if __name__ == "__main__":
     app = QApplication([])
     username = "user"
-    menu_data = get_menu_data_from_database(username = username)
+    menu_data = get_menu_data_from_database(username=username)
     main_window = NormalWindow(menu_data)
     main_window.show()
     sys.exit(app.exec_())

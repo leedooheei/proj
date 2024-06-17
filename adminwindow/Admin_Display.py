@@ -1,98 +1,98 @@
 import sys
-import mysql.connector
 import json
-from PyQt5.QtCore import QDateTime, QTimer
-from PyQt5.QtWidgets import QLabel, QWidget, QVBoxLayout, QGridLayout, QApplication, QFrame, QMessageBox
-
+import requests
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QScrollArea
 
 class AdminDisplay(QWidget):
+    server_url = 'http://localhost:5000/orders'
+
+
     def __init__(self, username=None):
         super().__init__()
-        self.setWindowTitle("관리자 화면")
-        self.setGeometry(0, 0, 1024, 600)
         self.username = username
-        self.order_layout = QVBoxLayout()
+        self.orders = []
+        self.current_start_index = 0
         self.init_ui()
+        self.fetch_orders()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.fetch_orders)
+        self.timer.start(2000)  # 2초마다 데이터 업데이트
 
-        # 주문 목록을 가져오는 타이머 설정
-        self.polling_timer = QTimer(self)
-        self.polling_timer.timeout.connect(self.poll_orders)
-        self.polling_timer.start(5000)  # 5초마다 데이터베이스를 폴링
 
     def init_ui(self):
-        # 현재 시간과 날짜를 표시할 Label
-        self.current_time_label = QLabel()
-        self.update_time()
-        self.order_layout.addWidget(self.current_time_label)
+        self.setWindowTitle('Admin Display')
+        self.resize(800, 600)
+        self.layout = QVBoxLayout()
 
-        # 주문 목록 레이블 추가
-        self.order_label = QLabel("주문 목록")
-        self.order_layout.addWidget(self.order_label)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
 
-        self.setLayout(self.order_layout)
+        self.orders_widget = QWidget()
+        self.orders_layout = QVBoxLayout(self.orders_widget)
 
-    def poll_orders(self):
+        self.scroll_area.setWidget(self.orders_widget)
+        self.layout.addWidget(self.scroll_area)
+
+        button_layout = QHBoxLayout()
+        self.prev_button = QPushButton("이전")
+        self.next_button = QPushButton("다음")
+        self.prev_button.clicked.connect(self.show_previous_orders)
+        self.next_button.clicked.connect(self.show_next_orders)
+        button_layout.addWidget(self.prev_button)
+        button_layout.addWidget(self.next_button)
+
+        self.layout.addLayout(button_layout)
+        self.setLayout(self.layout)
+
+    def fetch_orders(self):
         try:
-            connection = mysql.connector.connect(
-                host="localhost",
-                user="root",
-                password="1234",
-                database="kiosk"
-            )
-            cursor = connection.cursor()
-            query = "SELECT * FROM menu_order ORDER BY created_at DESC"
-            cursor.execute(query)
-            orders = cursor.fetchall()
+            response = requests.get(self.server_url)
+            response.raise_for_status()  # HTTP 오류 발생 시 예외 처리
+            self.orders = response.json()
+            self.display_orders()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching orders: {e}")
 
-            for order in orders:
-                order_id, order_number, total_price, eat_where, items, created_at = order
-                if order_id not in self.displayed_order_ids:
-                    self.displayed_order_ids.add(order_id)
-                    order_info = {
-                        "order_number": order_number,
-                        "total_price": total_price,
-                        "EatWhere": eat_where,
-                        "cart": json.loads(items),
-                        "created_at": created_at
-                    }
-                    self.display_order_info(order_info)
+    def display_orders(self):
+        for i in reversed(range(self.orders_layout.count())):
+            self.orders_layout.itemAt(i).widget().deleteLater()
 
-        except mysql.connector.Error as e:
-            print("MySQL 오류:", e)
-            QMessageBox.critical(self, "Database Error", f"MySQL 오류: {e}")
+        for order in self.orders[self.current_start_index:self.current_start_index + 10]:
+            order_number = order['order_number']
+            EatWhere = order['EatWhere']
+            payment_method = order['payment_method']
+            order_time = order.get('order_time', 'N/A')
 
-        finally:
-            if connection.is_connected():
-                cursor.close()
-                connection.close()
+            order_info = f"Order Number: {order_number}\n"
+            order_info += f"Eat Where: {EatWhere}\n"
+            order_info += f"Payment Method: {payment_method}\n"
+            order_info += f"Order Time: {order_time}\n"
+            order_info += "Items:\n"
+            for item in order['cart']:
+                item_name = item['name']
+                item_quantity = item.get('quantity', 1)
+                order_info += f"    - {item_name}, Quantity: {item_quantity}\n"
 
-    def update_ui_with_new_order(self, order_info):
-        order_number = order_info['order_number']
-        total_price = order_info['total_price']
-        eat_where = order_info['EatWhere']
-        cart = order_info['cart']
-        created_at = order_info['created_at']
+            label = QLabel(order_info)
+            label.setWordWrap(True)
 
-        order_details = f"Order #{order_number}\nTotal Price: {total_price}\nEat Where: {eat_where}\nOrder Time: {created_at}\nItems:\n"
-        for item in cart:
-            name = item['name']
-            price = item['price']
-            quantity = item.get('quantity', 1)
-            order_details += f"  - {name}: {price}원 x {quantity}\n"
+            self.orders_layout.addWidget(label)
 
-        order_label = QLabel(order_details)
-        self.order_layout.addWidget(order_label)
 
-    def update_time(self):
-        current_time = QDateTime.currentDateTime()
-        self.current_time_label.setText(current_time.toString("yyyy-MM-dd hh:mm:ss"))
 
-if __name__ == "__main__":
-    def main():
-        app = QApplication(sys.argv)
-        username = "admin"
-        display = AdminDisplay(username)
-        display.show()
-        sys.exit(app.exec_())
+    def show_previous_orders(self):
+        if self.current_start_index > 0:
+            self.current_start_index -= 10
+            self.display_orders()
 
-    main()
+    def show_next_orders(self):
+        if self.current_start_index + 10 < len(self.orders):
+            self.current_start_index += 10
+            self.display_orders()
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    admin_display = AdminDisplay()
+    admin_display.show()
+    sys.exit(app.exec_())

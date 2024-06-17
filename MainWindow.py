@@ -1,338 +1,489 @@
-import mysql.connector
-import re
+import json
 import sys
-import socket
+import time
+from socket import socket
 
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QLabel, QPushButton, QRadioButton, QMessageBox, \
-    QMainWindow, QWidget, QApplication
-from PyQt5.QtCore import QSize
+import mysql.connector
+import pyttsx3
+import speech_recognition as sr
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
+from Normal import NormalWindow, get_menu_data_from_database  # Normal.py 파일에서 NormalWindow 클래스 import
 
 
-class AdminWindow(QMainWindow):
-    def __init__(self, order_number):
-        super().__init__()
-        self.order_number = order_number  # 초기 주문 번호 설정
-        self.setWindowTitle("관리자 화면")
-        self.setGeometry(480, 800)
-        self.initUI()
-        self.setup_socket()
-
-    def initUI(self):
-        self.order_number_label = QLabel(f"주문 번호: {self.order_number}", self)
-        self.order_number_label.setStyleSheet("font-size: 20pt;")
-
-        self.menu_label = QLabel("메뉴 : ", self)
-        self.menu_label.setStyleSheet("font-size: 20pt;")
-
-        self.counter_payment_label = QLabel("결제 방식: 카운터에서 결제", self)
-        self.counter_payment_label.setStyleSheet("font-size: 20pt;")
-
-        self.counter_payment_button = QPushButton("카운터에서 결제", self)
-        self.counter_payment_button.setStyleSheet("font-size: 16pt;")
-        self.counter_payment_button.clicked.connect(self.open_payment_screen)
-
-        layout = QVBoxLayout()
-        layout.addWidget(self.order_number_label)
-        layout.addWidget(self.menu_label)
-        layout.addWidget(self.counter_payment_label)
-        layout.addWidget(self.counter_payment_button)
-
-        central_widget = QWidget()
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
-
-    def open_payment_screen(self):
-        from Voice_Payment import PaymentScreen
-        self.payment_screen = PaymentScreen(order_number=self.order_number)  # 주문 번호를 인자로 전달하여 PaymentScreen 생성
-        self.payment_screen.show()
-        self.order_number += 1
-
+class MainWindow(QMainWindow):
     def setup_socket(self):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind(('localhost', 9999))  # 포트 번호를 일관성 있게 설정
-        self.server_socket.listen(5)
-        print("서버 대기 중...")
-
-        self.client_socket, self.client_address = self.server_socket.accept()
-        print(f"클라이언트 {self.client_address}가 연결되었습니다.")
-        self.receive_order_info()
-
-    def receive_order_info(self):
-        while True:
-            data = self.client_socket.recv(1024)
-            if not data:
-                break
-            print("주문 정보 수신:", data.decode())
-
-    def close_socket(self):
-        self.client_socket.close()
-        self.server_socket.close()
-
-    def closeEvent(self, event):
-        self.close_socket()
-        event.accept()
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect(('localhost', 9999))  # 서버에 연결
+        print("서버와 연결되었습니다.")
 
 
-class LoginWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("로그인")
-        self.setGeometry(100, 100, 280, 80)
-
-        self.setupUi()
-
-    def setupUi(self):
-        layout = QVBoxLayout()
-
-        self.username_label = QLabel("아이디:", self)
-        layout.addWidget(self.username_label)
-        self.username_edit = QLineEdit(self)
-        layout.addWidget(self.username_edit)
-
-        self.password_label = QLabel("비밀번호:", self)
-        layout.addWidget(self.password_label)
-        self.password_edit = QLineEdit(self)
-        self.password_edit.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.password_edit)
-
-        self.login_button = QPushButton("로그인", self)
-        self.login_button.clicked.connect(self.login)
-        layout.addWidget(self.login_button)
-
-        self.user_type_label = QLabel("사용자 유형:", self)
-        layout.addWidget(self.user_type_label)
-
-        self.user_type_admin = QRadioButton("관리자", self)
-        self.user_type_kiosk = QRadioButton("키오스크", self)
-        layout.addWidget(self.user_type_admin)
-        layout.addWidget(self.user_type_kiosk)
-
-        self.register_button = QPushButton("회원가입", self)
-        self.register_button.clicked.connect(self.show_register_window)
-        layout.addWidget(self.register_button)
-
-        widget = QWidget()
-        widget.setLayout(layout)
-        self.setCentralWidget(widget)
-
-    def show_register_window(self):
-        self.register_window = RegisterWindow()
-        self.register_window.exec_()
-
-    def login(self):
-        username = self.username_edit.text()
-        password = self.password_edit.text()
-
-        if not self.user_type_admin.isChecked() and not self.user_type_kiosk.isChecked():
-            QMessageBox.warning(self, "경고", "사용자 유형을 선택해주세요.")
-            return
-
-        if self.user_type_admin.isChecked():
-            if login_user(username, password, "관리자"):
-                self.open_admin_window(username)
-        elif self.user_type_kiosk.isChecked():
-            if login_user(username, password, "키오스크"):
-                print("Login successful")
-                self.open_kiosk_window(username)
-
-    def open_admin_window(self, username):
-        print("open_admin_window - Username:", username)
-
-        from adminwindow.Admin_Display import AdminDisplay
-        self.username = username
-        self.admin_window = AdminDisplay(username=self.username)
-        self.admin_window.show()  # 수정된 부분
-
-    def open_kiosk_window(self,username):
-        from MainWindow import MainWindow
-        self.username = username
+    def go_manager(self):
+        from adminwindow.Admin_Main import AdminMainWindow
+        self.manager_window = AdminMainWindow(username=self.username)
         self.close()
-        self.kiosk_window = MainWindow(username=self.username)
-        self.kiosk_window.show()
+
+        self.manager_window.show()
+
+    def __init__(self, username=None):
+        super(MainWindow, self).__init__()
+        self.setStyleSheet(u"Background-color:rgb(255, 255, 255);")
+        self.setFixedSize(480, 830)
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.username = username
+        self.font = QFont()
+        self.font.setFamily(u"Cafe24 Ssurround Bold")
+        self.font.setPointSize(22)
+
+        # 바탕이 되는 위젯 생성
+        self.MainDisplay = QWidget()
+        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sizePolicy.setHeightForWidth(
+            self.MainDisplay.sizePolicy().hasHeightForWidth())
+        self.MainDisplay.setFixedSize(480, 830)
+        self.setCentralWidget(self.MainDisplay)
+
+        self.MainStackWidget = QStackedWidget(self.MainDisplay)
+        self.MainStackWidget.setGeometry(QRect(0, 140, 480, 690))
+        self.eat_where = None
+
+        # 관리자 버튼 범위 시작##############################################
+        def btnSetNHome(w, h, img):
+            btn = QPushButton(self.MainDisplay)
+            btn.setStyleSheet(
+                f"QPushButton {{ background-image: url('{img}');"
+                f"background-position: center;"
+                f"background-repeat: no-repeat;"
+                f"background-size: cover;}}")
+            btn.setFixedSize(w, h)
+            btn.setFlat(1)
+            return btn
+
+        self.SettingButton = btnSetNHome(40, 40, "img/UI/set.png")
+        self.ButtonHome = btnSetNHome(60, 60, "img/UI/left.png")
+        self.SettingButton.setGeometry(QRect(15, 75, 40, 40))
+        self.ButtonHome.setGeometry(QRect(5, 60, 60, 60))
+
+        self.SettingButton.clicked.connect(self.go_manager)
+        self.ButtonHome.clicked.connect(self.go_home)
+        self.ButtonHome.setHidden(True)
+        # 관리자 버튼 범위 끝###############################################
+
+        self.LabelWelcome = QLabel(self.MainDisplay)
+        self.LabelWelcome.setFont(self.font)
+        self.LabelWelcome.setAlignment(Qt.AlignCenter)
+        self.LabelWelcome.setGeometry(QRect(70, 35, 250, 110))
+        self.LabelWelcome.setText("쉽고 간편하게\n주문하세요")
+
+        self.mixFrame = QFrame(self.MainDisplay)
+        self.mixFrame.setGeometry(QRect(330, 70, 150, 70))
+        self.LabelTextsize = QLabel(self.MainDisplay)
+        self.LabelTextsize.setFont(QFont("Cafe24 Ssurround Bold", 20))
+        self.LabelTextsize.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+        self.LabelTextsize.setText("글씨 크기")
+        self.LabelTextsize.setGeometry(QRect(330, 35, 150, 30))
+
+        HlayoutTextsize = QHBoxLayout(self.mixFrame)
+
+        def makezoom(text):
+            btn = QPushButton(self.mixFrame)
+            btn.setFixedSize(60, 60)
+            btn.setSizePolicy(sizePolicy)
+            btn.setStyleSheet(
+                u"border: 1px solid rgba(0,0,0,0); border-radius: 16px; Background-color: rgb(255,126,0);font-weight:Bold; color: white; font-size: 90px;")
+            btn.setText(text)
+            return btn
+
+        self.ButtonBig = makezoom("+")
+        self.ButtonSmall = makezoom("-")
+
+        HlayoutTextsize.addWidget(self.ButtonSmall)
+        HlayoutTextsize.addWidget(self.ButtonBig)
+
+        self.ButtonBig.clicked.connect(self.increase_font_size)
+        self.ButtonSmall.clicked.connect(self.decrease_font_size)
+
+        self.PageSelectWhere = QWidget(self.MainStackWidget)
+        self.PageSelectWhere.setGeometry(QRect(0, 0, 480, 690))
+
+        self.LabelSelectWhere = QLabel(self.PageSelectWhere)
+        self.LabelSelectWhere.setFont(self.font)
+        self.LabelSelectWhere.setGeometry(0, 30, 480, 90)
+        self.LabelSelectWhere.setAlignment(Qt.AlignCenter)
+        self.LabelSelectWhere.setText("식사 장소를 선택하세요")
+
+        def BtnWhere(filename, text, eat_where=None):
+            btn = QPushButton(self.PageSelectWhere)
+            btn.setStyleSheet(f"QPushButton {{ background-image: url('img/Here&ToGo/{filename}');"
+                              f"background-position: center; background-repeat: no-repeat; background-size: 50% 50% ; color: rgba(0,0,0,0); "
+                              f"border-radius: 21px; border: 16px rgba(0,0,0,0);}}")
+            btn.setMaximumSize(220, 500)
+            btn.setFlat(True)
+            btn.setText(text)
+            btn.clicked.connect(lambda _, eat_where=eat_where: self.go_method(eat_where))
+            return btn
+
+        self.BtnHere = BtnWhere("Eat_Here.png", "먹고가기", "매장")
+        self.BtnHere.setGeometry(20, 140, 210, 570)
+        self.BtnTake = BtnWhere("Take_Out.png", "포장하기", "포장")
+        self.BtnTake.setGeometry(250, 140, 210, 570)
+
+        self.PageOrdermethod = QWidget(self.MainStackWidget)
+        self.PageOrdermethod.setGeometry(0, 0, 480, 690)
+        self.gridFrame = QFrame(self.PageOrdermethod)
+        self.gridFrame.setGeometry(QRect(0, 100, 480, 590))
+        self.LayoutOrdermethod = QGridLayout(self.gridFrame)
+        self.LayoutOrdermethod.setVerticalSpacing(40)
+
+        def makeOrderBtn(text, wid, hei, img):
+            btn = QPushButton()
+            btn.setFont(self.font)
+            btn.setIcon(QIcon(f"img/UI/{img}"))
+            btn.setIconSize(QSize(100, 100))
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    border-radius: 16px; border: 2px solid rgba(0, 0, 0, 0);background-color: rgb(255, 126, 0);
+                    color: rgb(255, 255, 255); padding-left: 30px;  /* 텍스트 위치 조정 */
+                    text-align: left;  /* 텍스트를 왼쪽으로 정렬 */
+                }}
+                QPushButton::icon {{
+                    position: absolute;
+                    left: 10px;  /* 아이콘 위치 조정
+
+                      }}
+                QPushButton::icon {{
+                    position: absolute;
+                    left: 10px;  /* 아이콘 위치 조정 */
+                }}
+            """)
+            btn.setText(text)
+            btn.setFixedSize(wid, hei)
+            return btn
+
+        self.BtnChoboOdr = makeOrderBtn("쉬운 주문하기", 450, 130, "menu-easy.png")
+        self.BtnRecOdr = makeOrderBtn("메뉴 추천", 450, 130, "menu-rec.png")
+        self.BtnVoiceOdr = makeOrderBtn("음성 주문", 450, 130, "menu-voice.png")
+
+        self.LayoutOrdermethod.addWidget(self.BtnChoboOdr, 0, 0)
+        self.LayoutOrdermethod.addWidget(self.BtnVoiceOdr, 1, 0)
+        self.LayoutOrdermethod.addWidget(self.BtnRecOdr, 2, 0)
+
+        self.BtnChoboOdr.clicked.connect(self.go_normal_order)
+        self.BtnVoiceOdr.clicked.connect(self.go_voice)
+        self.BtnRecOdr.clicked.connect(self.go_recommend)
+
+        self.LabelMethodSelect = QLabel(self.PageOrdermethod)
+        self.LabelMethodSelect.setFont(self.font)
+        self.LabelMethodSelect.setAlignment(Qt.AlignCenter)
+        self.LabelMethodSelect.setText("주문 방법을 선택하세요")
+        self.LabelMethodSelect.setGeometry(0, 15, 480, 90)
+
+        self.MainStackWidget.addWidget(self.PageSelectWhere)
+        self.MainStackWidget.addWidget(self.PageOrdermethod)
+        self.MainStackWidget.setCurrentIndex(0)
+
+        self.font_size = 22
+
+    def increase_font_size(self):
+        if self.font_size < 32:
+            self.font_size += 1
+            self.update_font()
+
+    def decrease_font_size(self):
+        if self.font_size > 16:
+            self.font_size -= 1
+            self.update_font()
+
+    def update_font(self):
+        self.font.setPointSize(self.font_size)
+        self.LabelWelcome.setFont(self.font)
+        self.LabelSelectWhere.setFont(self.font)
+        self.LabelMethodSelect.setFont(self.font)
+        self.BtnVoiceOdr.setFont(self.font)
+        self.BtnRecOdr.setFont(self.font)
+        self.BtnChoboOdr.setFont(self.font)
+
+    def go_method(self, eat_where):
+        self.eat_where = eat_where
+        self.MainStackWidget.setCurrentWidget(self.PageOrdermethod)
+        self.ButtonHome.setHidden(False)
+        self.SettingButton.setHidden(True)
+        print(f"선택된 식사 장소: {self.eat_where}")
+
+    def go_home(self):
+        self.MainStackWidget.setCurrentIndex(0)
+        self.ButtonHome.setHidden(True)
+        self.SettingButton.setHidden(False)
+        self.EatWhere = ""
+
+    def go_normal_order(self):
+        menu_data = get_menu_data_from_database(self.username)
+        self.normal_window = NormalWindow(username=self.username, menu_data=menu_data, EatWhere=self.eat_where)
+        self.close()
+        self.normal_window.show()
 
 
+    def go_voice(self):
+        menu_data = get_menu_data_from_database(self.username)
+        self.voice_window = VoiceKiosk(username=self.username, menu_data=menu_data, EatWhere=self.eat_where)
+        self.close()
+        self.voice_window.show()
 
-class RegisterWindow(QDialog):
+    def go_recommend(self):
+        from Recommend import RecommandOrder
+        menu_data = get_menu_data_from_database(self.username)
+        self.recommend = RecommandOrder(username=self.username, menu_data=menu_data, EatWhere=self.eat_where)
+        self.close()
+        self.recommend.show()
+
+class OrderNumberManager:
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("회원가입")
-        self.setupUi()
+        self.current_order_number = 1
 
-    def setupUi(self):
-        layout = QVBoxLayout()
+    def generate_order_number(self):
+        order_number = self.current_order_number
+        self.current_order_number += 1
+        return order_number
 
-        self.username_label = QLabel("아이디:", self)
-        layout.addWidget(self.username_label)
-        self.username_edit = QLineEdit(self)
-        layout.addWidget(self.username_edit)
+    def reset_order_number(self):
+        self.current_order_number = 1
 
-        self.check_button = QPushButton("중복 확인", self)
-        self.check_button.clicked.connect(self.check_duplicate)
-        layout.addWidget(self.check_button)
+class VoiceKiosk(QWidget):
 
-        self.password_label = QLabel("비밀번호:", self)
-        layout.addWidget(self.password_label)
-        self.password_edit = QLineEdit(self)
-        self.password_edit.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.password_edit)
+    def text_to_speech(self, text):
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 150)
+        engine.setProperty('volume', 0.9)
+        engine.say(text)
+        engine.runAndWait()
 
-        self.confirm_password_label = QLabel("비밀번호 확인:", self)
-        layout.addWidget(self.confirm_password_label)
-        self.confirm_password_edit = QLineEdit(self)
-        self.confirm_password_edit.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.confirm_password_edit)
-
-        self.register_button = QPushButton("회원가입", self)
-        self.register_button.clicked.connect(self.register)
-        layout.addWidget(self.register_button)
-
-        self.setLayout(layout)
-
-    def check_duplicate(self):
-        username = self.username_edit.text()
-        if not re.match("^(?=.*[a-zA-Z])(?=.*[0-9])[a-zA-Z0-9]{4,}$", username):
-            QMessageBox.warning(self, "유효성 검사", "아이디는 영문자와 숫자의 조합으로 최소 4자 이상이어야 합니다.")
-            return
-
-        try:
-            # MySQL 데이터베이스 연결
-            connection = mysql.connector.connect(
-                host="localhost",
-                user="root",
-                password="1234",
-                database="kiosk"
+    def imgchange(self):
+        if self.img_token == 0:
+            self.activate_button.setStyleSheet(
+                "QPushButton { background-image: url('img/UI/Voice_Off.png');"
+                "background-position: center;"
+                "background-repeat: no-repeat;"
+                "background-size: cover; }"
+            )
+        else:
+            self.activate_button.setStyleSheet(
+                "QPushButton { background-image: url('img/UI/Voice_On.png');"
+                "background-position: center;"
+                "background-repeat: no-repeat;"
+                "background-size: cover; }"
             )
 
-            # 커서 생성
-            cursor = connection.cursor()
+    def activate_microphone(self):
+        if not self.listening:
+            self.listening = True
+            self.LblVinfo.setText("1초 후에 음성 입력을 시작합니다.")
+            self.repaint()
+            time.sleep(1)
+            self.img_token = 1
+            self.imgchange()
 
-            # 사용자 정보 조회 쿼리
-            select_query = "SELECT * FROM users WHERE username = %s"
-            cursor.execute(select_query, (username,))
-            user = cursor.fetchone()
+            recognizer = sr.Recognizer()
+            with sr.Microphone() as source:
+                self.LblVinfo.setText("음성을 입력하세요...")
+                self.text_to_speech("음성을 입력하세요.")
 
-            if user:
-                QMessageBox.warning(self, "중복 확인", "이미 존재하는 아이디입니다.")
-            else:
-                QMessageBox.information(self, "중복 확인", "사용 가능한 아이디입니다.")
+                self.repaint()
+                audio_data = recognizer.listen(source)
+                try:
+                    user_input = recognizer.recognize_google(audio_data, language='ko-KR')
+                    if self.check_menu(user_input):
+                        self.update_order_display()
+                        QMessageBox.information(self, "주문 추가", f"{user_input}을(를) 주문에 추가하였습니다.")
+                        self.checkout_button.setEnabled(True)
+                    else:
+                        QMessageBox.warning(self, "주문 실패", "죄송합니다. 해당 메뉴가 없습니다.")
+                except sr.UnknownValueError:
+                    QMessageBox.warning(self, "음성 인식 실패", "음성을 인식할 수 없습니다.")
+            self.listening = False
+            self.img_token = 0
+            self.imgchange()
+            self.LblVinfo.setText("주문할 메뉴를 말씀해주세요.")
 
+    def __init__(self, username, menu_data, EatWhere):
+        super().__init__()
+        self.listening = False
+        self.payment_screen = None
+
+        self.username = username
+        self.menu_data = menu_data
+        self.EatWhere = EatWhere
+        self.setWindowTitle("음성 주문")
+        self.setFixedSize(480, 830)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setStyleSheet("background-color: rgb(255,255,255);")
+
+        self.PageVoice = QWidget()
+        self.PageVoice.setGeometry(0, 30, 480, 800)
+        self.order_list = []
+
+        self.LblVname = QLabel("음성 주문", self.PageVoice)
+        self.LblVname.setGeometry(QRect(90, 40, 240, 60))
+
+        # Add buttons to PageVoice widget
+        self.activate_button = QToolButton(self.PageVoice)
+        self.activate_button.setGeometry(QRect(180, 360, 120, 120))
+        self.activate_button.setIcon(QIcon("img/UI/mic_inactive.png"))  # Set icon image
+        self.activate_button.setIconSize(QSize(120, 120))  # Set icon size
+        self.activate_button.clicked.connect(self.activate_microphone)
+
+        self.back_button = QToolButton(self.PageVoice)
+        self.back_button.setGeometry(10, 40, 60, 60)
+        self.back_button.setIcon(QIcon("img/UI/left.png"))  # Set icon image
+        self.back_button.setIconSize(QSize(60, 60))  # Set icon size
+        self.back_button.clicked.connect(self.close)
+
+        self.LblVinfo = QLabel("버튼을 누르고\n주문할 메뉴를 말씀해주세요.", self.PageVoice)
+        self.LblVinfo.setAlignment(Qt.AlignCenter)
+        self.LblVinfo.setGeometry(QRect(50, 110, 380, 100))
+
+        self.back_button = QPushButton(self.PageVoice)
+        self.back_button.setStyleSheet(
+            "QPushButton { background-image: url('img/UI/left.png');"
+            "background-position: center;"
+            "background-repeat: no-repeat;"
+            "background-size: cover; }"
+        )
+        self.back_button.setGeometry(10, 40, 60, 60)
+
+        self.activate_button = QPushButton(self.PageVoice)
+        self.img_token = 0
+        self.imgchange()
+        self.activate_button.setFlat(1)
+        self.activate_button.clicked.connect(self.activate_microphone)
+        self.activate_button.setGeometry(QRect(180, 360, 120, 120))
+
+        self.order_label = QLabel("주문 목록:", self.PageVoice)
+        self.order_label.setGeometry(QRect(10, 520, 70, 30))
+
+        self.order_frame = QFrame(self.PageVoice)
+        self.order_frame.setGeometry(QRect(10, 560, 450, 200))
+        self.order_display = QVBoxLayout(self.order_frame)
+
+        self.LblOrderTotal = QLabel("총 합계         0원", self.PageVoice)
+        self.LblOrderTotal.setAlignment(Qt.AlignLeft)
+        self.LblOrderTotal.setGeometry(QRect(10, 770, 340, 50))
+
+        self.checkout_button = QPushButton("결제하기", self.PageVoice)
+        self.checkout_button.setEnabled(False)
+        self.checkout_button.clicked.connect(self.open_payment_screen)
+        self.checkout_button.setGeometry(QRect(350, 770, 120, 50))
+
+        self.db_host = "localhost"
+        self.db_user = "root"
+        self.db_password = "1234"
+        self.db_database = "kiosk"
+
+        self.db_connection = None
+
+        self.connect_to_database()
+        self.back_button.clicked.connect(self.close)
+        self.layout = QVBoxLayout(self)
+        self.layout.addWidget(self.PageVoice)
+
+    def check_menu(self, user_input):
+        if self.db_connection is None:
+            QMessageBox.warning(self, "Connection Error", "Not connected to the database.")
+            return False
+
+        try:
+            with self.db_connection.cursor() as cursor:
+                sql = "SELECT * FROM menu WHERE name = %s"
+                cursor.execute(sql, (user_input,))
+                result = cursor.fetchone()
+                if result:
+                    menu_name = result[2]
+                    menu_price_str = result[3]  # Get menu price as string
+                    try:
+                        menu_price = int(menu_price_str)  # Convert menu price to integer
+                    except ValueError:
+                        QMessageBox.warning(self, "Conversion Error",
+                                            f"Error converting price: '{menu_price_str}' is not a valid integer.")
+                        return False
+                    self.order_list.append((menu_name, menu_price, 1))
+                    print(f"{menu_name} - Price: {menu_price}원")
+                    return True
+                else:
+                    return False
         except mysql.connector.Error as e:
-            print("MySQL 오류:", e)
-
-        finally:
-            # 연결 종료
-            if connection.is_connected():
-                cursor.close()
-                connection.close()
-
-    def register(self):
-        username = self.username_edit.text()
-        password = self.password_edit.text()
-        confirm_password = self.confirm_password_edit.text()
-
-        if not self.validate_username(username) or not self.validate_password(password, confirm_password):
-            return
-
-        if register_user(username, password):
-                self.close()
-
-    def validate_username(self, username):
-        if not re.match("^(?=.*[a-zA-Z])(?=.*[0-9])[a-zA-Z0-9]{4,}$", username):
-            QMessageBox.warning(self, "유효성 검사", "아이디는 영문자와 숫자의 조합으로 최소 4자 이상이어야 합니다.")
-            return False
-        return True
-
-    def validate_password(self, password, confirm_password):
-        if password != confirm_password:
-            QMessageBox.warning(self, "유효성 검사", "비밀번호와 비밀번호 확인이 일치하지 않습니다.")
-            return False
-        elif len(password) < 4:
-            QMessageBox.warning(self, "유효성 검사", "비밀번호는 최소 4자 이상이어야 합니다.")
-            return False
-        return True
-
-def register_user(username, password):
-    try:
-        # MySQL 데이터베이스 연결
-        connection = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="1234",
-            database="kiosk"
-        )
-
-        # 커서 생성
-        cursor = connection.cursor()
-
-        # 사용자 정보 조회 쿼리
-        select_query = "SELECT * FROM users WHERE username = %s"
-        cursor.execute(select_query, (username,))
-        user = cursor.fetchone()
-
-        if user:
-            QMessageBox.warning(None, "회원가입 실패", "이미 존재하는 아이디입니다.")
+            QMessageBox.warning(self, "Query Error", f"Error executing query: {str(e)}")
             return False
 
-        # 사용자 정보를 INSERT 쿼리로 테이블에 저장
-        insert_query = "INSERT INTO users (username, password) VALUES (%s, %s)"
-        user_data = (username, password)
-        cursor.execute(insert_query, user_data)
+    def update_order_display(self):
+        total_amount = 0
+        for i in reversed(range(self.order_display.count())):
+            widget = self.order_display.itemAt(i).widget()
+            if widget is not None:
+                self.order_display.removeWidget(widget)
+                widget.deleteLater()
 
-        # 변경사항을 커밋
-        connection.commit()
+        for item in self.order_list:
+            menu_name, menu_price, quantity = item
+            total_price = menu_price * quantity
+            total_amount += total_price  # 항목의 총 가격을 합계에 추가
+            menu_widget = QWidget()
+            menu_layout = QHBoxLayout()
 
-        QMessageBox.information(None, "회원가입 성공", "회원가입이 완료되었습니다.")
-        return True
+            menu_label = QLabel(f"{menu_name} ------- {total_price}원", self)
+            menu_layout.addWidget(menu_label)
 
-    except mysql.connector.Error as e:
-        print("MySQL 오류:", e)
-        return False
+            minus_button = QPushButton("-", self)
+            minus_button.clicked.connect(lambda _, q=quantity, i=item: self.adjust_quantity(i, q - 1))
+            menu_layout.addWidget(minus_button)
+            quantity_label = QLabel(str(quantity), self)
+            menu_layout.addWidget(quantity_label)
+            plus_button = QPushButton("+", self)
+            plus_button.clicked.connect(lambda _, q=quantity, i=item: self.adjust_quantity(i, q + 1))
+            menu_layout.addWidget(plus_button)
+            menu_widget.setLayout(menu_layout)
+            self.order_display.addWidget(menu_widget)
+        self.LblOrderTotal.setText(f"총 합계         {total_amount}원")
 
-    finally:
-        # 연결 종료
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
+    def adjust_quantity(self, item, quantity):
+        index = None
+        for i, order_item in enumerate(self.order_list):
+            if order_item[0] == item[0]:
+                index = i
+                break
 
-def login_user(username, password, user_type):
-    try:
-        # MySQL 데이터베이스 연결
-        connection = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="1234",
-            database="kiosk"
-        )
+        if index is not None:
+            if quantity == 0:
+                del self.order_list[index]  # 수량이 0이면 해당 항목을 주문 목록에서 삭제
+            else:
+                self.order_list[index] = (item[0], item[1], quantity)  # 수량 업데이트
+            self.update_order_display()  # 주문 목록 업데이트
 
-        # 커서 생성
-        cursor = connection.cursor()
+    def open_payment_screen(self):
+        from Voice_Payment import PaymentScreen  # PaymentScreen 클래스 import
 
-        # 사용자 정보 조회 쿼리
-        select_query = "SELECT * FROM users WHERE username = %s AND password = %s"
-        user_data = (username, password)
-        cursor.execute(select_query, user_data)
-        user = cursor.fetchone()
+        # 주문번호 생성
+        order_manager = OrderNumberManager()
+        order_number = order_manager.generate_order_number()
 
-        if user:
-            QMessageBox.information(None, "로그인 성공", f"{user_type} 로그인 성공")
-            return True
+        # PaymentScreen 인스턴스 생성 및 초기화
+        self.payment_screen = PaymentScreen(username=self.username, cart=self.order_list, order_number=order_number)
 
-        else:
-            QMessageBox.warning(None, "로그인 실패", "아이디 또는 비밀번호가 일치하지 않습니다.")
-            return False
+        # 현재 창 닫기 및 PaymentScreen 보이기
+        self.close()
+        self.payment_screen.show()
 
-    except mysql.connector.Error as e:
-        print("MySQL 오류:", e)
-        return False
+    def connect_to_database(self):
+        try:
+            self.db_connection = mysql.connector.connect(host=self.db_host, user=self.db_user,
+                                                         password=self.db_password, database=self.db_database)
+        except mysql.connector.Error as e:
+            QMessageBox.warning(self, "연결 실패", f"데이터베이스 연결 중 오류 발생: {str(e)}")
 
-    finally:
-        # 연결 종료
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    login_window = LoginWindow()
-    login_window.show()
-    sys.exit(app.exec_())
+    username = "user"  # 사용자명을 직접 입력하거나 적절히 설정합니다.
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())  # 이벤트 루프 시작
